@@ -57,6 +57,7 @@ export interface GeminiSettings {
 
 export interface GeminiData {
   kind: "gemini";
+  model?: string; // selected model id; defaults to GEMINI_MODEL when unset
   prompt?: string;
   systemPrompt?: string;
   settings?: GeminiSettings;

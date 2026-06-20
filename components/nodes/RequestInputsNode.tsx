@@ -1,7 +1,7 @@
 "use client";
 
 import { Position, type NodeProps } from "@xyflow/react";
-import { Plus, Type, ImageIcon, Trash2 } from "lucide-react";
+import { Plus, Type, ImageIcon, Trash2, FormInput } from "lucide-react";
 import { ColoredHandle } from "./ColoredHandle";
 import { NodeShell } from "./NodeShell";
 import { ImageUpload } from "./ImageUpload";
@@ -36,7 +36,13 @@ export function RequestInputsNode({ id, data }: NodeProps) {
   };
 
   return (
-    <NodeShell nodeId={id} title="Request-Inputs" executable={false} deletable={false}>
+    <NodeShell
+      nodeId={id}
+      title="Request-Inputs"
+      icon={<FormInput size={14} />}
+      executable={false}
+      deletable={false}
+    >
       {fields.map((f) => (
         <div key={f.id} className="relative rounded-lg border border-node-border p-2">
           <div className="mb-1 flex items-center gap-1">

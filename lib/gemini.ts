@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODEL } from "@/lib/config";
+import type { GeminiSettings } from "@/lib/contracts";
 
 /**
  * Gemini wrapper using the current @google/genai SDK (the legacy
@@ -37,6 +38,8 @@ export interface GeminiRunInput {
   prompt: string;
   systemPrompt?: string;
   imageUrls?: string[]; // Image (Vision) — multiple supported
+  model?: string; // selected model id; falls back to GEMINI_MODEL
+  settings?: GeminiSettings; // temperature / maxOutputTokens from the node
   apiKey?: string; // BYOK key; falls back to the server key
 }
 
@@ -63,12 +66,17 @@ export async function runGemini(input: GeminiRunInput): Promise<{ response: stri
   for (const url of input.imageUrls ?? []) parts.push(await imagePart(url));
   parts.push({ text: input.prompt });
 
+  const config: Record<string, unknown> = {};
+  if (input.systemPrompt) config.systemInstruction = input.systemPrompt;
+  if (typeof input.settings?.temperature === "number")
+    config.temperature = input.settings.temperature;
+  if (typeof input.settings?.maxOutputTokens === "number")
+    config.maxOutputTokens = input.settings.maxOutputTokens;
+
   const request = {
-    model: GEMINI_MODEL,
+    model: input.model || GEMINI_MODEL,
     contents: parts,
-    config: input.systemPrompt
-      ? { systemInstruction: input.systemPrompt }
-      : undefined,
+    config: Object.keys(config).length ? config : undefined,
   };
 
   const client = input.apiKey ? new GoogleGenAI({ apiKey: input.apiKey }) : ai();

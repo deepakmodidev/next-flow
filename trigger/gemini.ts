@@ -1,5 +1,6 @@
 import { task } from "@trigger.dev/sdk";
 import { runGemini } from "@/lib/gemini";
+import type { GeminiSettings } from "@/lib/contracts";
 import {
   onNodeStart,
   onNodeSuccess,
@@ -33,6 +34,8 @@ export const geminiNode = task({
         ? String(inputs.systemPrompt)
         : undefined,
       imageUrls,
+      model: inputs.model ? String(inputs.model) : undefined,
+      settings: inputs.settings as GeminiSettings | undefined,
       apiKey: geminiApiKey,
     });
 

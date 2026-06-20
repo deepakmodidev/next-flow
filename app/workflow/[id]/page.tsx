@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
-import { prisma } from "@/lib/db";
+import { prisma, dbRetry } from "@/lib/db";
 import { WorkflowCanvas } from "@/components/canvas/WorkflowCanvas";
 import type { WorkflowGraph } from "@/lib/workflows";
 
@@ -17,7 +17,7 @@ export default async function WorkflowPage({
   const { id } = await params;
   const { userId } = await auth();
   const wf = userId
-    ? await prisma.workflow.findFirst({ where: { id, userId } })
+    ? await dbRetry(() => prisma.workflow.findFirst({ where: { id, userId } }))
     : null;
   if (!wf) notFound();
 

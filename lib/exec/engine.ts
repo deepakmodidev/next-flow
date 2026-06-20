@@ -78,8 +78,10 @@ export async function resolveNodeInputs(
     inputs.h = data.h ?? 100;
   }
   if (data.kind === "gemini") {
+    if (data.model) inputs.model = data.model;
     if (data.prompt) inputs.prompt = data.prompt;
     if (data.systemPrompt) inputs.systemPrompt = data.systemPrompt;
+    if (data.settings) inputs.settings = data.settings;
   }
 
   // 2. connected upstream outputs (override static)

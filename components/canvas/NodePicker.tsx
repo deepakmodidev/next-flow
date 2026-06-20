@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Search, X, Crop, Sparkles, ChevronRight } from "lucide-react";
+import { Search, X, Crop, ChevronRight } from "lucide-react";
+import { GeminiIcon } from "@/components/icons/GeminiIcon";
 import type { NodeKind } from "@/lib/contracts";
 
 interface PickerItem {
@@ -15,7 +16,7 @@ interface PickerItem {
 // Requirements). Categories mirror Magica's picker (IMAGE / OTHERS).
 const ITEMS: PickerItem[] = [
   { kind: "crop-image", label: "Crop Image", category: "IMAGE", icon: <Crop size={15} /> },
-  { kind: "gemini", label: "Gemini 3.1 Pro", category: "OTHERS", icon: <Sparkles size={15} /> },
+  { kind: "gemini", label: "Gemini 3.1 Pro", category: "OTHERS", icon: <GeminiIcon size={15} /> },
 ];
 
 export function NodePicker({
