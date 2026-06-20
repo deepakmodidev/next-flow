@@ -1,26 +1,86 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/*
+  NextFlow design tokens — measured from the live Magica builder.
+  See BUILD_PLAN.md §4. The canvas is LIGHT; handles/edges are type-colored.
+*/
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter), "Google Sans Flex", ui-sans-serif, system-ui, sans-serif;
+
+  /* surfaces */
+  --color-background: #ffffff;
+  --color-foreground: #1b1b18;
+  --color-canvas: #f5f5f5;
+  --color-canvas-dot: #d4d4d8;
+  --color-node: #ffffff;
+  --color-node-border: #e5e7eb;
+  --color-muted: #6b7280;
+
+  /* type-colored ports (handle + edge color follows source port type) */
+  --color-port-text: #f59e0b;   /* amber  — text / prompt */
+  --color-port-image: #3b82f6;  /* blue   — image */
+  --color-port-any: #6366f1;    /* indigo — generic / multi */
+  --color-port-number: #ec4899; /* pink   — number / settings */
+  --color-port-result: #22c55e; /* green  — final result */
+
+  /* accents / status */
+  --color-accent: #4f46e6;      /* indigo-600 — Run, primary, active */
+  --color-required: #f87171;    /* red-400 — required "*" */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-minimap: #18181b;
+
+  --radius-node: 12px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* React Flow (xyflow) light-theme overrides — applied when @xyflow/react styles load */
+:root {
+  --xy-background-color-default: #f5f5f5;
+  --xy-background-pattern-dots-color-default: #d4d4d8;
+  --xy-node-background-color-default: #ffffff;
+  --xy-node-border-default: 0.8px solid #e5e7eb;
+  --xy-node-border-radius-default: 12px;
+  --xy-node-color-default: #1b1b18;
+  --xy-node-boxshadow-hover-default: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --xy-node-boxshadow-selected-default: 0 0 0 2px rgba(99, 102, 241, 0.5);
+  --xy-edge-stroke-default: #9ca3af;
+  --xy-edge-stroke-selected-default: #6366f1;
+  --xy-connectionline-stroke-default: #9ca3af;
+  --xy-minimap-background-color-default: #18181b;
+  --xy-minimap-mask-background-color-default: rgba(0, 0, 0, 0.5);
+  --xy-minimap-node-background-color-default: #6b7280;
+  --xy-controls-button-background-color-default: #ffffff;
+  --xy-controls-button-background-color-hover-default: #f5f5f5;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+}
+
+/* Tailwind v4 Preflight no longer sets pointer on buttons — restore it. */
+button:not(:disabled),
+[role="button"]:not(:disabled),
+label[for],
+a {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Pulsating glow on a currently-executing node (spec requirement) */
+@keyframes nf-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(79, 70, 229, 0);
+  }
+}
+.nf-node-running {
+  animation: nf-pulse 1.4s ease-in-out infinite;
 }

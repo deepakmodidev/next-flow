@@ -1,0 +1,95 @@
+"use client";
+
+import { Position, type NodeProps } from "@xyflow/react";
+import { Crop } from "lucide-react";
+import { ColoredHandle } from "./ColoredHandle";
+import { NodeShell, FieldLabel } from "./NodeShell";
+import { useWorkflowStore } from "@/lib/store";
+import { makeHandleId } from "@/lib/handles";
+import type { CropImageData } from "@/lib/contracts";
+
+const IN_IMAGE = makeHandleId("in", "image", "inputImage");
+const OUT_IMAGE = makeHandleId("out", "image", "outputImage");
+
+export function CropImageNode({ id, data }: NodeProps) {
+  const d = data as unknown as CropImageData;
+  const updateNodeData = useWorkflowStore((s) => s.updateNodeData);
+  const edges = useWorkflowStore((s) => s.edges);
+  const imageConnected = edges.some(
+    (e) => e.target === id && e.targetHandle === IN_IMAGE,
+  );
+  const state = useWorkflowStore((s) => s.nodeState[id]);
+  const outputImage = (state?.output as { outputImage?: string } | undefined)
+    ?.outputImage;
+
+  const num = (k: "x" | "y" | "w" | "h") => (
+    <div key={k}>
+      <FieldLabel>{k.toUpperCase()} %</FieldLabel>
+      <input
+        type="number"
+        min={0}
+        max={100}
+        value={d[k]}
+        onChange={(e) =>
+          updateNodeData(id, {
+            [k]: Math.max(0, Math.min(100, Number(e.target.value))),
+          })
+        }
+        className="w-full rounded border border-node-border bg-node px-2 py-1 text-xs outline-none focus:border-accent"
+      />
+    </div>
+  );
+
+  return (
+    <NodeShell
+      nodeId={id}
+      title="Crop Image"
+      icon={<Crop size={14} />}
+      running={state?.status === "RUNNING"}
+    >
+      {/* Input Image */}
+      <div className="relative">
+        <FieldLabel required>Input Image</FieldLabel>
+        <input
+          disabled={imageConnected}
+          value={imageConnected ? "" : (d.inputImage ?? "")}
+          onChange={(e) => updateNodeData(id, { inputImage: e.target.value })}
+          placeholder={imageConnected ? "Connected" : "Image URL..."}
+          className="w-full rounded border border-node-border bg-node px-2 py-1 text-xs outline-none focus:border-accent disabled:bg-canvas disabled:text-muted"
+        />
+        <ColoredHandle id={IN_IMAGE} type="target" position={Position.Left} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {num("x")}
+        {num("y")}
+        {num("w")}
+        {num("h")}
+      </div>
+
+      {/* Output */}
+      <div className="relative">
+        <FieldLabel>Output Image</FieldLabel>
+        {outputImage ? (
+          <div className="overflow-hidden rounded border border-node-border">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={outputImage}
+              alt="crop output"
+              className="h-16 w-full object-cover"
+            />
+          </div>
+        ) : (
+          <div className="rounded border border-node-border bg-canvas px-2 py-2 text-xs text-muted">
+            {state?.error ? (
+              <span className="text-error">{state.error.slice(0, 120)}</span>
+            ) : (
+              "No output yet"
+            )}
+          </div>
+        )}
+        <ColoredHandle id={OUT_IMAGE} type="source" position={Position.Right} />
+      </div>
+    </NodeShell>
+  );
+}
