@@ -83,9 +83,13 @@ export function ImageUpload({
           <Loader2 size={12} className="animate-spin" /> Uploading…
         </div>
       ) : value ? (
-        <div className="overflow-hidden rounded border border-node-border">
+        <div className="overflow-hidden rounded border border-node-border bg-canvas">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={value} alt="uploaded" className="h-20 w-full object-cover" />
+          <img
+            src={value}
+            alt="uploaded"
+            className="max-h-48 w-full object-contain"
+          />
         </div>
       ) : (
         <div className="flex w-full items-center justify-center gap-1 rounded border border-dashed border-node-border py-2 text-xs text-muted hover:border-accent">

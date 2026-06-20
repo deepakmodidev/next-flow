@@ -81,7 +81,9 @@ export async function runGemini(input: GeminiRunInput): Promise<{ response: stri
 
   const client = input.apiKey ? new GoogleGenAI({ apiKey: input.apiKey }) : ai();
 
-  // Retry ONLY on rate-limit (429); fail fast on every other error.
+  // Retry transient Gemini errors — 429 rate-limit AND 503 "high demand"
+  // (model overloaded). Both are temporary; failing fast on a 503 would skip
+  // every downstream node. Fail fast on all other (real) errors.
   // Budget stays well under the task maxDuration: ≤3 attempts, each call capped
   // at 30s, backoff capped at 12s → worst case ~110s.
   const MAX_ATTEMPTS = 3;
@@ -92,9 +94,11 @@ export async function runGemini(input: GeminiRunInput): Promise<{ response: stri
       return { response: res.text };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const rateLimited =
-        /\b429\b|RESOURCE_EXHAUSTED|exceeded your current quota/i.test(msg);
-      if (!rateLimited || attempt >= MAX_ATTEMPTS - 1) throw e;
+      const retryable =
+        /\b429\b|\b503\b|RESOURCE_EXHAUSTED|UNAVAILABLE|exceeded your current quota|high demand|overloaded/i.test(
+          msg,
+        );
+      if (!retryable || attempt >= MAX_ATTEMPTS - 1) throw e;
       await new Promise((r) => setTimeout(r, retryDelayMs(msg, attempt)));
     }
   }
