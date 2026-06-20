@@ -21,19 +21,6 @@ export interface StoredWorkflow extends WorkflowMeta {
   graph: WorkflowGraph;
 }
 
-export async function listWorkflows(): Promise<WorkflowMeta[]> {
-  const res = await fetch("/api/workflows");
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.workflows ?? [];
-}
-
-export async function getWorkflow(id: string): Promise<StoredWorkflow | null> {
-  const res = await fetch(`/api/workflows/${id}`);
-  if (!res.ok) return null;
-  return (await res.json()) as StoredWorkflow;
-}
-
 export async function createWorkflow(
   name = "Untitled workflow",
 ): Promise<StoredWorkflow> {

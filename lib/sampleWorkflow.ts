@@ -58,7 +58,14 @@ export function buildSampleWorkflow(): {
             value:
               "Product: Wireless Bluetooth Headphones. Features: Noise cancellation, 30-hour battery, foldable design.",
           },
-          { id: F_IMAGE, name: "image_field", type: "image_field", value: "" },
+          {
+            id: F_IMAGE,
+            name: "image_field",
+            type: "image_field",
+            // Runnable default so the sample executes out-of-the-box; replace by
+            // uploading your own product photo (Transloadit) in the demo.
+            value: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=1024&q=80",
+          },
         ],
       }),
     },

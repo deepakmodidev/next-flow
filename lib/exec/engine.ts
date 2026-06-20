@@ -12,9 +12,9 @@ import { planRun } from "@/lib/exec/plan";
  * This satisfies the spec's "never block on unrelated siblings" rule within
  * Trigger.dev v4's constraints (no Promise.all around triggerAndWait).
  *
- * NOTE: authored against the verified Trigger.dev v4 / Prisma 7 APIs but not yet
- * run end-to-end — needs DATABASE_URL + TRIGGER_SECRET_KEY + a real FFmpeg/upload
- * implementation for Crop. Marked TODO where a live integration is required.
+ * Crop (real FFmpeg + Transloadit upload) and Gemini (real @google/genai) are
+ * fully implemented. Running the engine requires DATABASE_URL, GEMINI_API_KEY,
+ * NEXT_PUBLIC_TRANSLOADIT_KEY, and a running/deployed `trigger.dev` worker.
  */
 
 // ---- Graph shape stored in Workflow.graph (React Flow JSON) ----
