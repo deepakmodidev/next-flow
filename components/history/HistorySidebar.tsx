@@ -60,19 +60,27 @@ export function HistorySidebar({
   const [runs, setRuns] = useState<RunDTO[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [err, setErr] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setErr(false);
     let active = true;
+    // Reset is done in the fetch callbacks (not synchronously here) so the panel
+    // shows a loader until the first response — never an empty-state flash.
     const load = () => {
       fetch(`/api/runs?workflowId=${encodeURIComponent(workflowId)}`)
         .then((r) => (r.ok ? r.json() : Promise.reject()))
-        .then((d) => active && setRuns(d.runs ?? []))
+        .then((d) => {
+          if (!active) return;
+          setRuns(d.runs ?? []);
+          setErr(false);
+          setLoaded(true);
+        })
         .catch(() => {
           if (active) {
             setRuns([]);
             setErr(true);
+            setLoaded(true);
           }
         });
     };
@@ -97,7 +105,16 @@ export function HistorySidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
-        {runs.length === 0 ? (
+        {!loaded ? (
+          <ul className="flex flex-col gap-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <li
+                key={i}
+                className="h-9 animate-pulse rounded-lg border border-node-border bg-canvas"
+              />
+            ))}
+          </ul>
+        ) : runs.length === 0 ? (
           <div className="mt-10 text-center text-xs text-muted">
             {err
               ? "Run history needs the database wired (DATABASE_URL)."

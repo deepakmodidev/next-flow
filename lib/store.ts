@@ -6,7 +6,6 @@ import {
   type Connection,
   type Edge,
   type EdgeChange,
-  type Node,
   type NodeChange,
 } from "@xyflow/react";
 import { parseHandleId, isTypeCompatible, EDGE_COLOR } from "@/lib/handles";
@@ -47,6 +46,12 @@ interface WorkflowState {
   isValidConnection: (conn: Connection | Edge) => boolean;
 
   // mutations
+  hydrate: (
+    workflowId: string,
+    nodes: AppNode[],
+    edges: Edge[],
+    name: string,
+  ) => void;
   setGraph: (nodes: AppNode[], edges: Edge[], name?: string) => void;
   setName: (name: string) => void;
   setCurrentRunId: (id: string | null) => void;
@@ -117,6 +122,23 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       dirty: true,
     });
   },
+
+  // Seed the store from server-fetched data on canvas mount. Resets transient
+  // run state too, so navigating between workflows never carries over glow or a
+  // stale run id from the previous one.
+  hydrate: (workflowId, nodes, edges, name) =>
+    set({
+      workflowId,
+      nodes,
+      edges,
+      name,
+      past: [],
+      future: [],
+      dirty: false,
+      currentRunId: null,
+      runActive: false,
+      nodeState: {},
+    }),
 
   setGraph: (nodes, edges, name) =>
     set((s) => ({

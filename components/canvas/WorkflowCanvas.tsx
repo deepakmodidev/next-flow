@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -17,10 +17,33 @@ import { nodeTypes } from "@/components/nodes/nodeTypes";
 import { BottomToolbar } from "./BottomToolbar";
 import { TopBar } from "./TopBar";
 import { HistorySidebar } from "@/components/history/HistorySidebar";
-import { getWorkflow, saveGraph } from "@/lib/workflows";
-import { seedNodes } from "@/lib/nodeFactory";
+import { saveGraph, type WorkflowGraph } from "@/lib/workflows";
 
-function CanvasInner({ workflowId }: { workflowId: string }) {
+// Run before the browser paints on the client (so the canvas never shows an
+// empty frame); fall back to useEffect on the server to avoid React's
+// "useLayoutEffect does nothing on the server" warning.
+const useBrowserLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+function CanvasInner({
+  workflowId,
+  initialGraph,
+  initialName,
+}: {
+  workflowId: string;
+  initialGraph: WorkflowGraph;
+  initialName: string;
+}) {
+  // Seed the store from server-fetched data before the first visible frame, so
+  // the canvas renders with its nodes immediately — no empty-canvas flash, no
+  // client round-trip. CanvasInner is keyed by workflowId upstream, so this
+  // runs exactly once per workflow.
+  useBrowserLayoutEffect(() => {
+    useWorkflowStore
+      .getState()
+      .hydrate(workflowId, initialGraph.nodes, initialGraph.edges, initialName);
+  }, []);
+
   const nodes = useWorkflowStore((s) => s.nodes);
   const edges = useWorkflowStore((s) => s.edges);
   const name = useWorkflowStore((s) => s.name);
@@ -28,42 +51,16 @@ function CanvasInner({ workflowId }: { workflowId: string }) {
   const onEdgesChange = useWorkflowStore((s) => s.onEdgesChange);
   const onConnect = useWorkflowStore((s) => s.onConnect);
   const isValidConnection = useWorkflowStore((s) => s.isValidConnection);
-  const setGraph = useWorkflowStore((s) => s.setGraph);
   const currentRunId = useWorkflowStore((s) => s.currentRunId);
   const setNodeState = useWorkflowStore((s) => s.setNodeState);
-  const setWorkflowId = useWorkflowStore((s) => s.setWorkflowId);
   const setRunActive = useWorkflowStore((s) => s.setRunActive);
 
-  const loadedFor = useRef<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  // Load the workflow graph (or seed a fresh one) on mount / id change.
+  // Debounced autosave. Data is present from first render (hydrated), so the
+  // only guard needed is never persisting an empty graph.
   useEffect(() => {
-    let active = true;
-    loadedFor.current = null; // block autosave until THIS workflow has loaded
-    getWorkflow(workflowId).then((wf) => {
-      if (!active) return;
-      if (wf) {
-        setGraph(wf.graph.nodes, wf.graph.edges, wf.name);
-      } else {
-        setGraph(seedNodes(), [], "Untitled workflow");
-      }
-      loadedFor.current = workflowId;
-    });
-    return () => {
-      active = false;
-    };
-  }, [workflowId, setGraph]);
-
-  // Expose the active workflow id to the store (for run actions).
-  useEffect(() => {
-    setWorkflowId(workflowId);
-  }, [workflowId, setWorkflowId]);
-
-  // Debounced autosave — only once this workflow has loaded, and never persist
-  // an empty graph (a valid workflow always has the 2 pre-placed nodes).
-  useEffect(() => {
-    if (loadedFor.current !== workflowId || nodes.length === 0) return;
+    if (nodes.length === 0) return;
     const t = setTimeout(
       () => saveGraph(workflowId, { nodes, edges }, name),
       600,
@@ -157,10 +154,23 @@ function CanvasInner({ workflowId }: { workflowId: string }) {
   );
 }
 
-export function WorkflowCanvas({ workflowId }: { workflowId: string }) {
+export function WorkflowCanvas({
+  workflowId,
+  initialGraph,
+  initialName,
+}: {
+  workflowId: string;
+  initialGraph: WorkflowGraph;
+  initialName: string;
+}) {
   return (
     <ReactFlowProvider>
-      <CanvasInner workflowId={workflowId} />
+      <CanvasInner
+        key={workflowId}
+        workflowId={workflowId}
+        initialGraph={initialGraph}
+        initialName={initialName}
+      />
     </ReactFlowProvider>
   );
 }
