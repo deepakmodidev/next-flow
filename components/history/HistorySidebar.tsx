@@ -9,6 +9,7 @@ interface NodeRunDTO {
   type: string;
   status: string;
   durationMs?: number | null;
+  inputs?: unknown;
   output?: unknown;
   error?: string | null;
 }
@@ -33,6 +34,37 @@ function badge(status: string) {
 }
 function ms(d?: number | null) {
   return d == null ? "—" : d < 1000 ? `${d}ms` : `${(d / 1000).toFixed(1)}s`;
+}
+function fmtTime(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+// "inputs used" for the expanded node detail — a compact one-liner of the
+// resolved input values (keys + short values), matching the spec's example.
+function summarizeInputs(inputs: unknown): string {
+  if (inputs == null || typeof inputs !== "object") return "";
+  const entries = Object.entries(inputs as Record<string, unknown>);
+  if (entries.length === 0) return "";
+  return entries
+    .map(([k, v]) => {
+      if (v == null) return k;
+      if (Array.isArray(v)) return `${k}: [${v.length}]`;
+      if (typeof v === "string") {
+        const s = v.length > 40 ? `${v.slice(0, 40)}…` : v;
+        return `${k}: ${s}`;
+      }
+      if (typeof v === "object") return k;
+      return `${k}: ${String(v)}`;
+    })
+    .join(", ");
 }
 
 function summarizeOutput(output: unknown): string {
@@ -144,7 +176,12 @@ export function HistorySidebar({
                   >
                     {run.status}
                   </span>
-                  <span className="flex-1 text-xs text-muted">{run.scope}</span>
+                  <span className="flex flex-1 flex-col">
+                    <span className="text-xs text-muted">{run.scope}</span>
+                    <span className="text-[10px] text-muted/80">
+                      {fmtTime(run.startedAt)}
+                    </span>
+                  </span>
                   <span className="text-xs text-muted">{ms(run.durationMs)}</span>
                 </button>
                 {expanded === run.id && (
@@ -162,6 +199,12 @@ export function HistorySidebar({
                           </span>
                           <span className="text-muted">{ms(nr.durationMs)}</span>
                         </div>
+                        {summarizeInputs(nr.inputs) && (
+                          <p className="mt-1 line-clamp-2 break-words text-[11px] text-muted">
+                            <span className="text-foreground/60">inputs: </span>
+                            {summarizeInputs(nr.inputs)}
+                          </p>
+                        )}
                         {nr.error ? (
                           <p className="mt-1 line-clamp-3 break-words text-[11px] text-error">
                             {nr.error}

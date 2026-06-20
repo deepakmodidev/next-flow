@@ -18,11 +18,13 @@ export async function GET(
     id: run.id,
     status: run.status,
     scope: run.scope,
+    startedAt: run.startedAt,
     durationMs: run.durationMs,
     nodeRuns: run.nodeRuns.map((n) => ({
       nodeId: n.nodeId,
       type: n.type,
       status: n.status,
+      inputs: n.inputs,
       output: n.output,
       error: n.error,
       durationMs: n.durationMs,

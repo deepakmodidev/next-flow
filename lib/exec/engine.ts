@@ -117,6 +117,22 @@ export async function onNodeStart(runId: string, nodeId: string): Promise<void> 
   });
 }
 
+/**
+ * Persist the resolved inputs a node actually ran with, so the history sidebar
+ * can show "inputs used". Called right after resolveNodeInputs (before the work
+ * runs) so the inputs are recorded even if the node then fails.
+ */
+export async function recordNodeInputs(
+  runId: string,
+  nodeId: string,
+  inputs: Record<string, unknown>,
+): Promise<void> {
+  await prisma.nodeRun.update({
+    where: { runId_nodeId: { runId, nodeId } },
+    data: { inputs: inputs as object },
+  });
+}
+
 export async function onNodeSuccess(
   runId: string,
   nodeId: string,
@@ -183,6 +199,7 @@ export async function scheduleDependents(
         where: { runId_nodeId: { runId, nodeId: depId } },
         data: {
           status: "SUCCESS",
+          inputs: inputs as object,
           output: { result: inputs.result ?? inputs } as object,
           finishedAt: new Date(),
         },

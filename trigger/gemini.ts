@@ -6,6 +6,7 @@ import {
   onNodeSuccess,
   onNodeFailure,
   resolveNodeInputs,
+  recordNodeInputs,
   scheduleDependents,
   maybeFinalizeRun,
 } from "@/lib/exec/engine";
@@ -22,6 +23,7 @@ export const geminiNode = task({
     await onNodeStart(runId, nodeId);
 
     const inputs = await resolveNodeInputs(runId, nodeId);
+    await recordNodeInputs(runId, nodeId, inputs);
     const raw = inputs.image;
     const imageUrls = (Array.isArray(raw) ? raw : raw ? [raw] : []).map(String);
 

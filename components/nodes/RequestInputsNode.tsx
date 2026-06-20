@@ -79,7 +79,7 @@ export function RequestInputsNode({ id, data }: NodeProps) {
               }
               placeholder="Enter text..."
               rows={2}
-              className="w-full resize-none rounded border border-node-border bg-node px-2 py-1 text-xs outline-none focus:border-accent"
+              className="nodrag w-full resize-y rounded border border-node-border bg-node px-2 py-1 text-xs outline-none focus:border-accent"
             />
           ) : (
             <ImageUpload

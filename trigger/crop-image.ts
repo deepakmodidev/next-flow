@@ -10,6 +10,7 @@ import {
   onNodeSuccess,
   onNodeFailure,
   resolveNodeInputs,
+  recordNodeInputs,
   scheduleDependents,
   maybeFinalizeRun,
 } from "@/lib/exec/engine";
@@ -29,6 +30,7 @@ export const cropImageNode = task({
     await wait.for({ seconds: CROP_DELAY_SECONDS });
 
     const inputs = await resolveNodeInputs(runId, nodeId);
+    await recordNodeInputs(runId, nodeId, inputs);
     const outputImage = await cropImage(inputs);
     const output = { outputImage };
 

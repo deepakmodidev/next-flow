@@ -117,7 +117,7 @@ export function GeminiNode({ id, data }: NodeProps) {
           onChange={(e) => updateNodeData(id, { prompt: e.target.value })}
           placeholder={connected(IN_PROMPT) ? "Connected" : "Enter your prompt..."}
           rows={2}
-          className="w-full resize-none rounded border border-node-border bg-node px-2 py-1 text-xs outline-none focus:border-accent disabled:bg-canvas disabled:text-muted"
+          className="nodrag w-full resize-y rounded border border-node-border bg-node px-2 py-1 text-xs outline-none focus:border-accent disabled:bg-canvas disabled:text-muted"
         />
         <ColoredHandle id={IN_PROMPT} type="target" position={Position.Left} />
       </div>
@@ -131,7 +131,7 @@ export function GeminiNode({ id, data }: NodeProps) {
           onChange={(e) => updateNodeData(id, { systemPrompt: e.target.value })}
           placeholder={connected(IN_SYSTEM) ? "Connected" : "You are a helpful assistant..."}
           rows={2}
-          className="w-full resize-none rounded border border-node-border bg-node px-2 py-1 text-xs outline-none focus:border-accent disabled:bg-canvas disabled:text-muted"
+          className="nodrag w-full resize-y rounded border border-node-border bg-node px-2 py-1 text-xs outline-none focus:border-accent disabled:bg-canvas disabled:text-muted"
         />
         <ColoredHandle id={IN_SYSTEM} type="target" position={Position.Left} />
       </div>

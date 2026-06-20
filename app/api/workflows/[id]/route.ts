@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { prisma, dbRetry } from "@/lib/db";
 
 const PatchSchema = z.object({
   name: z.string().optional(),
@@ -17,7 +17,9 @@ export async function GET(
   const { userId } = await auth();
   if (!userId) return new Response("Unauthorized", { status: 401 });
   const { id } = await params;
-  const w = await prisma.workflow.findFirst({ where: { id, userId } });
+  const w = await dbRetry(() =>
+    prisma.workflow.findFirst({ where: { id, userId } }),
+  );
   if (!w) return new Response("Not found", { status: 404 });
   return Response.json({
     id: w.id,
@@ -41,7 +43,7 @@ export async function PATCH(
   const data: { name?: string; graph?: object } = {};
   if (typeof parsed.data.name === "string") data.name = parsed.data.name;
   if (parsed.data.graph) data.graph = parsed.data.graph;
-  await prisma.workflow.updateMany({ where: { id, userId }, data });
+  await dbRetry(() => prisma.workflow.updateMany({ where: { id, userId }, data }));
   return Response.json({ ok: true });
 }
 
@@ -52,6 +54,6 @@ export async function DELETE(
   const { userId } = await auth();
   if (!userId) return new Response("Unauthorized", { status: 401 });
   const { id } = await params;
-  await prisma.workflow.deleteMany({ where: { id, userId } });
+  await dbRetry(() => prisma.workflow.deleteMany({ where: { id, userId } }));
   return Response.json({ ok: true });
 }

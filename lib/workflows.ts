@@ -81,13 +81,16 @@ export async function saveGraph(
 }
 
 export async function renameWorkflow(id: string, name: string): Promise<void> {
-  await fetch(`/api/workflows/${id}`, {
+  const res = await fetch(`/api/workflows/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
   });
+  // Don't swallow the failure — a silent no-op looks like "rename doesn't work".
+  if (!res.ok) throw new Error(`Rename failed (${res.status})`);
 }
 
 export async function deleteWorkflow(id: string): Promise<void> {
-  await fetch(`/api/workflows/${id}`, { method: "DELETE" });
+  const res = await fetch(`/api/workflows/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Delete failed (${res.status})`);
 }

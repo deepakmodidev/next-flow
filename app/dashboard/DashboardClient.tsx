@@ -93,8 +93,12 @@ export function DashboardList({ items }: { items: WorkflowItem[] }) {
 
   const onDelete = async (id: string) => {
     if (!confirm("Delete this workflow?")) return;
-    await deleteWorkflow(id);
-    startTransition(() => router.refresh());
+    try {
+      await deleteWorkflow(id);
+      startTransition(() => router.refresh());
+    } catch {
+      alert("Couldn't delete — the database may be waking up. Try again in a moment.");
+    }
   };
 
   const startRename = (m: WorkflowItem) => {
@@ -102,9 +106,18 @@ export function DashboardList({ items }: { items: WorkflowItem[] }) {
     setDraft(m.name);
   };
   const commitRename = async (id: string) => {
-    if (draft.trim()) await renameWorkflow(id, draft.trim());
-    setEditing(null);
-    startTransition(() => router.refresh());
+    const name = draft.trim();
+    if (!name) {
+      setEditing(null);
+      return;
+    }
+    try {
+      await renameWorkflow(id, name);
+      setEditing(null); // only leave edit mode once the write actually succeeded
+      startTransition(() => router.refresh());
+    } catch {
+      alert("Couldn't rename — the database may be waking up. Try again in a moment.");
+    }
   };
 
   if (items.length === 0) {
