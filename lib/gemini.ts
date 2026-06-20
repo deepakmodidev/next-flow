@@ -43,8 +43,19 @@ export interface GeminiRunInput {
 function retryDelayMs(message: string, attempt: number): number {
   // Gemini 429 errors often include `"retryDelay":"23s"`.
   const m = message.match(/retryDelay"?:\s*"?(\d+)s/i);
-  if (m) return Number(m[1]) * 1000 + 1000;
-  return Math.min(30_000, 5_000 * 2 ** attempt); // 5s, 10s, 20s, 30s…
+  if (m) return Math.min(15_000, Number(m[1]) * 1000 + 1000);
+  return Math.min(12_000, 4_000 * 2 ** attempt); // 4s, 8s, 12s
+}
+
+// Bound a Gemini call so a hung/quota-stalled request fails the node cleanly
+// instead of running past the task maxDuration (which leaves it stuck RUNNING).
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Gemini call timed out after ${ms}ms`)), ms),
+    ),
+  ]);
 }
 
 export async function runGemini(input: GeminiRunInput): Promise<{ response: string }> {
@@ -63,10 +74,12 @@ export async function runGemini(input: GeminiRunInput): Promise<{ response: stri
   const client = input.apiKey ? new GoogleGenAI({ apiKey: input.apiKey }) : ai();
 
   // Retry ONLY on rate-limit (429); fail fast on every other error.
-  const MAX_ATTEMPTS = 4;
+  // Budget stays well under the task maxDuration: ≤3 attempts, each call capped
+  // at 30s, backoff capped at 12s → worst case ~110s.
+  const MAX_ATTEMPTS = 3;
   for (let attempt = 0; ; attempt++) {
     try {
-      const res = await client.models.generateContent(request);
+      const res = await withTimeout(client.models.generateContent(request), 30_000);
       if (res.text === undefined) throw new Error("Gemini returned no text");
       return { response: res.text };
     } catch (e) {

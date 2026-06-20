@@ -62,10 +62,21 @@ export async function saveGraph(
   graph: WorkflowGraph,
   name?: string,
 ): Promise<void> {
+  // Never persist transient UI state (selection / drag flags).
+  const nodes = graph.nodes.map((n) => {
+    const { selected, dragging, ...rest } = n as AppNode & {
+      selected?: boolean;
+      dragging?: boolean;
+    };
+    void selected;
+    void dragging;
+    return rest;
+  });
+  const clean = { nodes, edges: graph.edges };
   await fetch(`/api/workflows/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(name ? { graph, name } : { graph }),
+    body: JSON.stringify(name ? { graph: clean, name } : { graph: clean }),
   });
 }
 

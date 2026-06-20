@@ -60,17 +60,19 @@ export function planRun(
       continue;
     }
 
-    // count upstream EXECUTABLE deps that are also in the run set
-    const pendingDeps = graph.edges.filter(
-      (e) =>
-        e.target === id &&
-        targetSet.has(e.source) &&
-        !isLocalKind(kindOf(e.source)),
-    ).length;
+    // Count DISTINCT upstream deps in the run set — including local sources.
+    // The local source's completion (via scheduleDependents) is what releases
+    // this node, so it must be counted; otherwise the node is also triggered as
+    // a "root" AND decremented by the local fan-out → double-trigger.
+    const pendingDeps = new Set(
+      graph.edges
+        .filter((e) => e.target === id && targetSet.has(e.source))
+        .map((e) => e.source),
+    ).size;
 
     rows.push({ id, kind, pendingDeps });
 
-    // a real task root: executable (not a local sink) with no executable upstream
+    // A true task root: executable node with NO upstream at all in the set.
     if (pendingDeps === 0 && !isLocalKind(kind)) roots.push(id);
   }
 
