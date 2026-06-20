@@ -127,7 +127,7 @@ export function HistorySidebar({
   if (!open) return null;
 
   return (
-    <aside className="absolute right-0 top-0 z-20 flex h-full w-80 flex-col border-l border-node-border bg-node shadow-lg">
+    <aside className="flex h-full w-80 shrink-0 flex-col border-l border-node-border bg-node">
       <div className="flex items-center gap-2 border-b border-node-border px-4 py-3">
         <History size={16} />
         <span className="flex-1 text-sm font-medium">History</span>

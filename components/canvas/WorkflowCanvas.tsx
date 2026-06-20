@@ -10,7 +10,6 @@ import {
   MiniMap,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { History } from "lucide-react";
 import { useWorkflowStore } from "@/lib/store";
 import { EDGE_COLOR } from "@/lib/handles";
 import { nodeTypes } from "@/components/nodes/nodeTypes";
@@ -107,44 +106,42 @@ function CanvasInner({
   }, [currentRunId, setNodeState, setRunActive]);
 
   return (
-    <div className="relative h-full w-full bg-canvas">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        isValidConnection={isValidConnection}
-        nodeTypes={nodeTypes}
-        defaultEdgeOptions={{
-          animated: true,
-          style: { stroke: EDGE_COLOR, strokeWidth: 1.5 },
-        }}
-        deleteKeyCode={["Delete", "Backspace"]}
-        fitView
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={20}
-          size={1.5}
-          color="var(--color-canvas-dot)"
-        />
-        <MiniMap pannable zoomable />
-        <Controls />
-      </ReactFlow>
-      <TopBar onOpenHistory={() => setHistoryOpen(true)} />
-      <BottomToolbar />
-
-      {!historyOpen && (
-        <button
-          type="button"
-          onClick={() => setHistoryOpen(true)}
-          className="absolute right-4 top-14 z-10 flex items-center gap-1.5 rounded-md border border-node-border bg-node px-2.5 py-1.5 text-xs text-muted shadow-sm hover:text-foreground"
+    <div className="flex h-full w-full">
+      {/* Canvas area shrinks when the history panel opens (it's a flex sibling,
+          not an overlay) so the panel never covers the graph. */}
+      <div className="relative min-w-0 flex-1 bg-canvas">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          isValidConnection={isValidConnection}
+          nodeTypes={nodeTypes}
+          defaultEdgeOptions={{
+            animated: true,
+            style: { stroke: EDGE_COLOR, strokeWidth: 1.5 },
+          }}
+          deleteKeyCode={["Delete", "Backspace"]}
+          fitView
+          proOptions={{ hideAttribution: true }}
         >
-          <History size={14} /> History
-        </button>
-      )}
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={20}
+            size={1.5}
+            color="var(--color-canvas-dot)"
+          />
+          <MiniMap pannable zoomable />
+          <Controls />
+        </ReactFlow>
+        <TopBar
+          historyOpen={historyOpen}
+          onToggleHistory={() => setHistoryOpen((o) => !o)}
+          onOpenHistory={() => setHistoryOpen(true)}
+        />
+        <BottomToolbar />
+      </div>
       <HistorySidebar
         workflowId={workflowId}
         open={historyOpen}

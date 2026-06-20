@@ -2,12 +2,20 @@
 
 import { useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Download, Upload, Play, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, Upload, Play, Loader2, History } from "lucide-react";
 import { useWorkflowStore } from "@/lib/store";
 import { exportWorkflow, parseWorkflowImport } from "@/lib/graphIO";
 import type { AppNode } from "@/lib/nodeFactory";
 
-export function TopBar({ onOpenHistory }: { onOpenHistory: () => void }) {
+export function TopBar({
+  onOpenHistory,
+  onToggleHistory,
+  historyOpen,
+}: {
+  onOpenHistory: () => void;
+  onToggleHistory: () => void;
+  historyOpen: boolean;
+}) {
   const fileRef = useRef<HTMLInputElement>(null);
   const name = useWorkflowStore((s) => s.name);
   const setName = useWorkflowStore((s) => s.setName);
@@ -68,6 +76,18 @@ export function TopBar({ onOpenHistory }: { onOpenHistory: () => void }) {
         className="flex items-center gap-1 rounded-md border border-node-border px-2.5 py-1.5 text-xs text-muted hover:text-foreground"
       >
         <Download size={13} /> Export
+      </button>
+      <button
+        type="button"
+        onClick={onToggleHistory}
+        title="Toggle run history"
+        className={`flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs ${
+          historyOpen
+            ? "border-accent text-accent"
+            : "border-node-border text-muted hover:text-foreground"
+        }`}
+      >
+        <History size={13} /> History
       </button>
       <button
         type="button"
