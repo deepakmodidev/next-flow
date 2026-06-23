@@ -38,12 +38,17 @@ function taskIdForKind(kind: NodeKind): string {
   return kind === "crop-image" ? "crop-image-node" : "gemini-node";
 }
 
-async function loadGraph(runId: string): Promise<{ graph: StoredGraph }> {
+async function loadGraph(
+  runId: string,
+): Promise<{ graph: StoredGraph; workflowId: string }> {
   const run = await prisma.run.findUniqueOrThrow({
     where: { id: runId },
     include: { workflow: true },
   });
-  return { graph: run.workflow.graph as unknown as StoredGraph };
+  return {
+    graph: run.workflow.graph as unknown as StoredGraph,
+    workflowId: run.workflowId,
+  };
 }
 
 /** Whether a node is part of this run (a NodeRun row was created for it). */
@@ -64,7 +69,7 @@ export async function resolveNodeInputs(
   runId: string,
   nodeId: string,
 ): Promise<Record<string, unknown>> {
-  const { graph } = await loadGraph(runId);
+  const { graph, workflowId } = await loadGraph(runId);
   const node = graph.nodes.find((n) => n.id === nodeId);
   const inputs: Record<string, unknown> = {};
 
@@ -91,9 +96,20 @@ export async function resolveNodeInputs(
     const tgt = parseHandleId(e.targetHandle);
     const src = parseHandleId(e.sourceHandle);
     if (!tgt) continue;
-    const sourceRun = await prisma.nodeRun.findUnique({
+    // Prefer the source's output from THIS run. If the source isn't part of
+    // this run (single-node or partial run that excludes the upstream node),
+    // fall back to its most recent successful output on this workflow — so a
+    // single node runs against the latest cached upstream values instead of
+    // failing on a missing connected input.
+    let sourceRun = await prisma.nodeRun.findUnique({
       where: { runId_nodeId: { runId, nodeId: e.source } },
     });
+    if (!sourceRun) {
+      sourceRun = await prisma.nodeRun.findFirst({
+        where: { nodeId: e.source, status: "SUCCESS", run: { workflowId } },
+        orderBy: { finishedAt: "desc" },
+      });
+    }
     const out = (sourceRun?.output ?? {}) as Record<string, unknown>;
     const value = src ? out[src.key] : undefined;
     if (value === undefined) continue;
@@ -153,6 +169,26 @@ export async function onNodeSuccess(
   });
 }
 
+/**
+ * Pull the RAW message out of whatever a failed node throws, so the UI shows
+ * the real cause (Gemini/FFmpeg/Trigger.dev) instead of a generic
+ * "[object Object]". Handles Error, Trigger.dev's serialized `{ message }`
+ * shape, and falls back to JSON for anything else.
+ */
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const msg = (error as { message?: unknown }).message;
+    if (typeof msg === "string" && msg.trim()) return msg;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      /* fall through to String() */
+    }
+  }
+  return String(error);
+}
+
 export async function onNodeFailure(
   runId: string,
   nodeId: string,
@@ -162,7 +198,7 @@ export async function onNodeFailure(
     where: { runId_nodeId: { runId, nodeId } },
     data: {
       status: "FAILED",
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
       finishedAt: new Date(),
     },
   });

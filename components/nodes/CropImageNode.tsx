@@ -82,7 +82,9 @@ export function CropImageNode({ id, data }: NodeProps) {
         ) : (
           <div className="rounded border border-node-border bg-canvas px-2 py-2 text-xs text-muted">
             {state?.error ? (
-              <span className="text-error">{state.error.slice(0, 120)}</span>
+              <span className="block max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-error">
+                {state.error}
+              </span>
             ) : (
               "No output yet"
             )}

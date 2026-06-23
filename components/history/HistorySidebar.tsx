@@ -206,7 +206,7 @@ export function HistorySidebar({
                           </p>
                         )}
                         {nr.error ? (
-                          <p className="mt-1 line-clamp-3 break-words text-[11px] text-error">
+                          <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[11px] text-error">
                             {nr.error}
                           </p>
                         ) : nr.output != null ? (
