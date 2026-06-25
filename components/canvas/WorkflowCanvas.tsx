@@ -43,6 +43,41 @@ function CanvasInner({
       .hydrate(workflowId, initialGraph.nodes, initialGraph.edges, initialName);
   }, []);
 
+  // After hydrate, load the workflow's most recent run so finished node outputs
+  // show on the canvas even after a reload or when a run completed in the
+  // background (hydrate wipes nodeState, and the live poll only fills it while a
+  // run is active). If that run is still RUNNING, resume live polling.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/runs?workflowId=${workflowId}`);
+        if (!res.ok) return;
+        const { runs } = await res.json();
+        const latest = runs?.[0];
+        if (!latest || cancelled) return;
+        const map: Record<
+          string,
+          { status: string; output?: unknown; error?: string | null }
+        > = {};
+        for (const n of latest.nodeRuns ?? []) {
+          map[n.nodeId] = { status: n.status, output: n.output, error: n.error };
+        }
+        const store = useWorkflowStore.getState();
+        if (latest.status === "RUNNING") {
+          store.setRunActive(true);
+          store.setCurrentRunId(latest.id); // resumes the poll (clears nodeState)
+        }
+        store.setNodeState(map); // set after so the latest outputs show immediately
+      } catch {
+        /* no recent run / offline — nodes stay blank until the next run */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workflowId]);
+
   const nodes = useWorkflowStore((s) => s.nodes);
   const edges = useWorkflowStore((s) => s.edges);
   const name = useWorkflowStore((s) => s.name);

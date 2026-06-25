@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Check, Loader2, KeyRound } from "lucide-react";
 import {
   getLocalGeminiKey,
@@ -55,7 +56,7 @@ export function GeminiKeyModal({
     }
   };
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
@@ -128,6 +129,7 @@ export function GeminiKeyModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

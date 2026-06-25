@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { auth } from "@clerk/nextjs/server";
 import { prisma, dbRetry } from "@/lib/db";
+import { runIsStale, failStaleRun } from "@/lib/exec/engine";
 import {
   DashboardHeader,
   DashboardList,
@@ -17,7 +18,6 @@ export default function DashboardPage() {
   return (
     <div className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
       <DashboardHeader />
-      <h2 className="mb-3 text-sm font-medium text-muted">Your Workflows</h2>
       <Suspense fallback={<ListSkeleton />}>
         <WorkflowListSection />
       </Suspense>
@@ -25,33 +25,56 @@ export default function DashboardPage() {
   );
 }
 
-/** Auth-scoped fetch of the user's workflows + which are currently running. */
+/** Auth-scoped fetch of the user's workflows + each one's latest run status. */
 async function WorkflowListSection() {
   const { userId } = await auth();
-  const [rows, activeRuns] = userId
-    ? await dbRetry(() =>
-        Promise.all([
-          prisma.workflow.findMany({
-            where: { userId },
-            orderBy: { updatedAt: "desc" },
-            select: { id: true, name: true, updatedAt: true },
-          }),
-          prisma.run.findMany({
-            where: { userId, status: "RUNNING" },
-            select: { workflowId: true },
-            distinct: ["workflowId"],
-          }),
-        ]),
-      )
-    : [[], []];
+  if (!userId) return <DashboardList items={[]} />;
 
-  const running = new Set(activeRuns.map((r) => r.workflowId));
-  const items: WorkflowItem[] = rows.map((w) => ({
-    id: w.id,
-    name: w.name,
-    updatedAt: w.updatedAt.getTime(),
-    running: running.has(w.id),
-  }));
+  const [workflows, latestRuns] = await dbRetry(() =>
+    Promise.all([
+      prisma.workflow.findMany({
+        where: { userId },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true, name: true, updatedAt: true },
+      }),
+      // One row per workflow: its most recent run (with node timestamps so the
+      // watchdog can tell a live run from a stalled one).
+      prisma.run.findMany({
+        where: { userId },
+        orderBy: { startedAt: "desc" },
+        distinct: ["workflowId"],
+        select: {
+          id: true,
+          workflowId: true,
+          status: true,
+          startedAt: true,
+          finishedAt: true,
+          nodeRuns: { select: { startedAt: true, finishedAt: true } },
+        },
+      }),
+    ]),
+  );
+
+  // Watchdog: never show a phantom "Running" for a run whose worker has died.
+  for (const r of latestRuns) {
+    if (r.status === "RUNNING" && runIsStale(r)) {
+      await failStaleRun(r.id);
+      r.status = "FAILED";
+      r.finishedAt = new Date();
+    }
+  }
+
+  const byWorkflow = new Map(latestRuns.map((r) => [r.workflowId, r]));
+  const items: WorkflowItem[] = workflows.map((w) => {
+    const r = byWorkflow.get(w.id);
+    return {
+      id: w.id,
+      name: w.name,
+      updatedAt: w.updatedAt.getTime(),
+      lastStatus: r?.status ?? null,
+      lastRunAt: r ? (r.finishedAt ?? r.startedAt).getTime() : null,
+    };
+  });
 
   return <DashboardList items={items} />;
 }
@@ -59,11 +82,12 @@ async function WorkflowListSection() {
 /** List-only skeleton — the header and headings are already on screen. */
 function ListSkeleton() {
   return (
-    <ul className="divide-y divide-node-border overflow-hidden rounded-node border border-node-border bg-node">
+    <ul className="nf-elevate divide-y divide-node-border overflow-hidden rounded-xl border border-node-border bg-node">
       {Array.from({ length: 4 }).map((_, i) => (
-        <li key={i} className="flex items-center gap-3 px-4 py-3">
-          <div className="h-4 w-4 animate-pulse rounded bg-canvas" />
+        <li key={i} className="flex items-center gap-3 px-4 py-3.5">
+          <div className="h-7 w-7 animate-pulse rounded-lg bg-canvas" />
           <div className="h-4 flex-1 animate-pulse rounded bg-canvas" />
+          <div className="h-5 w-16 animate-pulse rounded-full bg-canvas" />
           <div className="h-3 w-14 animate-pulse rounded bg-canvas" />
         </li>
       ))}

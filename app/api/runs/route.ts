@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { prisma, dbRetry } from "@/lib/db";
 import { startRun } from "@/lib/exec/engine";
 
 const StartRunSchema = z.object({
@@ -40,12 +40,15 @@ export async function GET(request: NextRequest) {
   if (!userId) return new Response("Unauthorized", { status: 401 });
 
   const workflowId = request.nextUrl.searchParams.get("workflowId");
-  // Scope to the signed-in user's own runs (history is per-user).
-  const runs = await prisma.run.findMany({
-    where: { userId, ...(workflowId ? { workflowId } : {}) },
-    orderBy: { startedAt: "desc" },
-    take: 50,
-    include: { nodeRuns: true },
-  });
+  // Scope to the signed-in user's own runs (history is per-user). Wrapped in
+  // dbRetry so a Neon cold-start/connection blip doesn't 500 the poll.
+  const runs = await dbRetry(() =>
+    prisma.run.findMany({
+      where: { userId, ...(workflowId ? { workflowId } : {}) },
+      orderBy: { startedAt: "desc" },
+      take: 50,
+      include: { nodeRuns: true },
+    }),
+  );
   return Response.json({ runs });
 }

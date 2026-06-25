@@ -10,12 +10,14 @@ import {
   deleteWorkflow,
 } from "@/lib/workflows";
 import { buildSampleWorkflow } from "@/lib/sampleWorkflow";
+import type { RunStatus } from "@/lib/contracts";
 
 export interface WorkflowItem {
   id: string;
   name: string;
   updatedAt: number;
-  running?: boolean;
+  lastStatus: RunStatus | null;
+  lastRunAt: number | null;
 }
 
 function timeAgo(ts: number): string {
@@ -26,6 +28,32 @@ function timeAgo(ts: number): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+const STATUS_STYLES: Record<
+  RunStatus,
+  { label: string; text: string; bg: string; dot: string; pulse?: boolean }
+> = {
+  RUNNING: { label: "Running", text: "text-accent", bg: "bg-accent/10", dot: "bg-accent", pulse: true },
+  SUCCESS: { label: "Success", text: "text-success", bg: "bg-success/10", dot: "bg-success" },
+  FAILED: { label: "Failed", text: "text-error", bg: "bg-error/10", dot: "bg-error" },
+  PARTIAL: { label: "Partial", text: "text-warning", bg: "bg-warning/10", dot: "bg-warning" },
+};
+
+/** Latest-run status pill shown on each workflow row. */
+function StatusBadge({ status }: { status: RunStatus | null }) {
+  if (!status) {
+    return <span className="text-[11px] text-muted/70">Not run yet</span>;
+  }
+  const s = STATUS_STYLES[status];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${s.bg} ${s.text}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${s.dot} ${s.pulse ? "animate-pulse" : ""}`} />
+      {s.label}
+    </span>
+  );
 }
 
 /**
@@ -48,25 +76,25 @@ export function DashboardHeader() {
   };
 
   return (
-    <div className="mb-8 flex items-end justify-between">
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Flow</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Workflows</h1>
         <p className="mt-1 text-sm text-muted">
-          Build workflows or run models directly.
+          Build node-based AI workflows and run them live.
         </p>
       </div>
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={onCreateSample}
-          className="rounded-lg border border-node-border px-3.5 py-2 text-sm font-medium text-foreground hover:bg-canvas"
+          className="rounded-lg border border-node-border bg-node px-3.5 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:border-accent/40 hover:bg-canvas"
         >
           Sample workflow
         </button>
         <button
           type="button"
           onClick={onCreate}
-          className="flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
+          className="flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-opacity hover:opacity-90"
         >
           <Plus size={16} /> New Workflow
         </button>
@@ -122,9 +150,11 @@ export function DashboardList({ items }: { items: WorkflowItem[] }) {
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-node border border-dashed border-node-border py-16 text-center">
-        <Workflow size={28} className="text-muted" />
-        <p className="mt-3 text-sm font-medium">No workflows yet</p>
+      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-node-border bg-node/50 py-16 text-center">
+        <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 text-accent">
+          <Workflow size={24} />
+        </span>
+        <p className="mt-4 text-sm font-medium">No workflows yet</p>
         <p className="mt-1 text-xs text-muted">
           Create your first workflow to get started.
         </p>
@@ -141,12 +171,12 @@ export function DashboardList({ items }: { items: WorkflowItem[] }) {
 
   return (
     <ul
-      className={`divide-y divide-node-border overflow-hidden rounded-node border border-node-border bg-node ${pending ? "opacity-60" : ""}`}
+      className={`nf-elevate divide-y divide-node-border overflow-hidden rounded-xl border border-node-border bg-node ${pending ? "opacity-60" : ""}`}
     >
       {items.map((m) => (
         <li
           key={m.id}
-          className="flex items-center gap-3 px-4 py-3 hover:bg-canvas"
+          className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-canvas/60"
         >
           {editing === m.id ? (
             <>
@@ -179,18 +209,17 @@ export function DashboardList({ items }: { items: WorkflowItem[] }) {
               <button
                 type="button"
                 onClick={() => router.push(`/workflow/${m.id}`)}
-                className="flex flex-1 items-center gap-2 text-left"
+                className="flex flex-1 items-center gap-2.5 text-left"
               >
-                <Workflow size={16} className="text-accent" />
-                <span className="text-sm font-medium">{m.name}</span>
-              </button>
-              {m.running && (
-                <span className="flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium text-accent">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-                  Running
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                  <Workflow size={15} />
                 </span>
-              )}
-              <span className="text-xs text-muted">{timeAgo(m.updatedAt)}</span>
+                <span className="truncate text-sm font-medium">{m.name}</span>
+              </button>
+              <StatusBadge status={m.lastStatus} />
+              <span className="w-24 shrink-0 text-right text-xs text-muted">
+                {m.lastRunAt ? `ran ${timeAgo(m.lastRunAt)}` : `edited ${timeAgo(m.updatedAt)}`}
+              </span>
               <button
                 type="button"
                 onClick={() => startRename(m)}

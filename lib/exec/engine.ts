@@ -284,6 +284,56 @@ async function skipDependents(runId: string, nodeId: string): Promise<void> {
   }
 }
 
+// ---- Watchdog --------------------------------------------------------------
+
+/**
+ * A run is "stale" if it's still RUNNING but nothing has progressed for longer
+ * than a node could legitimately take. Each node task is capped at maxDuration
+ * (120s) and writes to the DB on start AND on finish/fail, so a live worker
+ * always produces a DB write within that window. No write for STUCK_MS ⇒ the
+ * worker died or was never reachable (the exact "nodes never started, no error,
+ * no timeout" failure from the review). We detect it lazily at read time so it
+ * works even when no worker is running to enforce a timeout itself.
+ */
+const STUCK_MS = 180_000; // > task maxDuration (120s) + comfortable buffer
+
+type StaleRun = {
+  status: string;
+  startedAt: Date;
+  nodeRuns: { startedAt: Date | null; finishedAt: Date | null }[];
+};
+
+export function runIsStale(run: StaleRun): boolean {
+  if (run.status !== "RUNNING") return false;
+  let last = run.startedAt.getTime();
+  for (const n of run.nodeRuns) {
+    if (n.startedAt) last = Math.max(last, n.startedAt.getTime());
+    if (n.finishedAt) last = Math.max(last, n.finishedAt.getTime());
+  }
+  return Date.now() - last > STUCK_MS;
+}
+
+const TIMEOUT_MSG =
+  "Execution timed out — the task worker became unavailable. Re-run once the worker is online.";
+
+/** Force a stuck run to a terminal FAILED state with a clear per-node reason. */
+export async function failStaleRun(runId: string): Promise<void> {
+  await prisma.nodeRun.updateMany({
+    where: { runId, status: { in: ["PENDING", "RUNNING"] } },
+    data: { status: "FAILED", error: TIMEOUT_MSG, finishedAt: new Date() },
+  });
+  const run = await prisma.run.findUnique({ where: { id: runId } });
+  if (!run || run.status !== "RUNNING") return;
+  await prisma.run.update({
+    where: { id: runId },
+    data: {
+      status: "FAILED",
+      finishedAt: new Date(),
+      durationMs: Date.now() - run.startedAt.getTime(),
+    },
+  });
+}
+
 export async function maybeFinalizeRun(runId: string): Promise<void> {
   const rows = await prisma.nodeRun.findMany({ where: { runId } });
   const pending = rows.some(

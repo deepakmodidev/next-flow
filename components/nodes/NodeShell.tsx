@@ -36,13 +36,13 @@ export function NodeShell({
 
   return (
     <div
-      className={`rounded-node border border-node-border bg-node text-foreground shadow-sm ${
+      className={`nf-elevate rounded-node border border-node-border bg-node text-foreground ${
         running ? "nf-node-running" : ""
       }`}
       style={{ width }}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-node-border px-3 py-2">
+      <div className="flex items-center gap-2 rounded-t-node border-b border-node-border bg-canvas/40 px-3 py-2">
         {icon}
         <span className="flex-1 truncate text-sm font-medium">{title}</span>
         {executable && (
@@ -51,7 +51,7 @@ export function NodeShell({
             onClick={() => runScoped("SINGLE", [nodeId])}
             disabled={runActive}
             title="Run just this node"
-            className="inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             <Play size={11} fill="currentColor" />
             Run

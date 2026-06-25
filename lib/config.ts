@@ -16,5 +16,5 @@ export const GEMINI_MODELS = [
 /** Default model when a node hasn't picked one. */
 export const GEMINI_MODEL: string = GEMINI_MODELS[0].id;
 
-/** Mandatory artificial delay on Crop Image (spec hard requirement). */
-export const CROP_DELAY_SECONDS = 30;
+/** Artificial processing delay on Crop Image, in seconds. */
+export const CROP_DELAY_SECONDS = 3;

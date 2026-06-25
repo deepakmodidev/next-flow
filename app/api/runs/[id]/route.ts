@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { prisma } from "@/lib/db";
+import { prisma, dbRetry } from "@/lib/db";
+import { runIsStale, failStaleRun } from "@/lib/exec/engine";
 
 export async function GET(
   _request: NextRequest,
@@ -9,11 +10,26 @@ export async function GET(
   const { userId } = await auth();
   if (!userId) return new Response("Unauthorized", { status: 401 });
   const { id } = await params;
-  const run = await prisma.run.findFirst({
-    where: { id, userId },
-    include: { nodeRuns: true },
-  });
+  let run = await dbRetry(() =>
+    prisma.run.findFirst({
+      where: { id, userId },
+      include: { nodeRuns: true },
+    }),
+  );
   if (!run) return new Response("Not found", { status: 404 });
+
+  // Watchdog: if the run has stalled (worker died/unavailable), fail it now so
+  // the canvas stops polling and shows a real error instead of hanging.
+  if (runIsStale(run)) {
+    await failStaleRun(run.id);
+    run = await dbRetry(() =>
+      prisma.run.findFirst({
+        where: { id, userId },
+        include: { nodeRuns: true },
+      }),
+    );
+    if (!run) return new Response("Not found", { status: 404 });
+  }
   return Response.json({
     id: run.id,
     status: run.status,

@@ -71,6 +71,32 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* --- Polish: soft elevation for cards / panels / nodes --- */
+.nf-elevate {
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 6px 16px -6px rgba(16, 24, 40, 0.08);
+}
+.nf-elevate-hover {
+  transition:
+    box-shadow 0.18s ease,
+    transform 0.18s ease,
+    border-color 0.18s ease;
+}
+.nf-elevate-hover:hover {
+  box-shadow:
+    0 2px 4px rgba(16, 24, 40, 0.05),
+    0 12px 28px -10px rgba(16, 24, 40, 0.14);
+}
+
+/* Faint app background so white cards read as elevated */
+.nf-app-surface {
+  background:
+    radial-gradient(60rem 60rem at 110% -10%, rgba(79, 70, 229, 0.05), transparent 60%),
+    radial-gradient(40rem 40rem at -10% 0%, rgba(59, 130, 246, 0.04), transparent 55%),
+    #fafafa;
+}
+
 /* Pulsating glow on a currently-executing node (spec requirement) */
 @keyframes nf-pulse {
   0%,
