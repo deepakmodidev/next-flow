@@ -19,16 +19,22 @@ export async function GET(
   if (!run) return new Response("Not found", { status: 404 });
 
   // Watchdog: if the run has stalled (worker died/unavailable), fail it now so
-  // the canvas stops polling and shows a real error instead of hanging.
+  // the canvas stops polling and shows a real error instead of hanging. The
+  // write is best-effort — a transient blip should not 500 the poll.
   if (runIsStale(run)) {
-    await failStaleRun(run.id);
-    run = await dbRetry(() =>
-      prisma.run.findFirst({
-        where: { id, userId },
-        include: { nodeRuns: true },
-      }),
-    );
-    if (!run) return new Response("Not found", { status: 404 });
+    const staleId = run.id;
+    try {
+      await dbRetry(() => failStaleRun(staleId));
+      run =
+        (await dbRetry(() =>
+          prisma.run.findFirst({
+            where: { id, userId },
+            include: { nodeRuns: true },
+          }),
+        )) ?? run;
+    } catch (e) {
+      console.error("failStaleRun reconcile failed", e);
+    }
   }
   return Response.json({
     id: run.id,

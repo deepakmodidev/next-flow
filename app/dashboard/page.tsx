@@ -56,11 +56,17 @@ async function WorkflowListSection() {
   );
 
   // Watchdog: never show a phantom "Running" for a run whose worker has died.
+  // The reconcile write is best-effort — if it fails (transient DB blip), we'd
+  // rather degrade to showing a stale "Running" than error the whole page.
   for (const r of latestRuns) {
     if (r.status === "RUNNING" && runIsStale(r)) {
-      await failStaleRun(r.id);
-      r.status = "FAILED";
-      r.finishedAt = new Date();
+      try {
+        await dbRetry(() => failStaleRun(r.id));
+        r.status = "FAILED";
+        r.finishedAt = new Date();
+      } catch (e) {
+        console.error("failStaleRun reconcile failed", e);
+      }
     }
   }
 

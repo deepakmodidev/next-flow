@@ -64,6 +64,9 @@ function CanvasInner({
           map[n.nodeId] = { status: n.status, output: n.output, error: n.error };
         }
         const store = useWorkflowStore.getState();
+        // If the user already started a run before this list resolved, don't
+        // clobber the live run's state with a stale historical one.
+        if (cancelled || store.runActive || store.currentRunId) return;
         if (latest.status === "RUNNING") {
           store.setRunActive(true);
           store.setCurrentRunId(latest.id); // resumes the poll (clears nodeState)
@@ -88,30 +91,34 @@ function CanvasInner({
   const currentRunId = useWorkflowStore((s) => s.currentRunId);
   const setNodeState = useWorkflowStore((s) => s.setNodeState);
   const setRunActive = useWorkflowStore((s) => s.setRunActive);
+  const dirty = useWorkflowStore((s) => s.dirty);
+  const markSaved = useWorkflowStore((s) => s.markSaved);
 
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  // Debounced autosave. Data is present from first render (hydrated), so the
-  // only guard needed is never persisting an empty graph.
+  // Debounced autosave — only when there are real unsaved changes (`dirty`), so
+  // selection/measurement churn doesn't trigger redundant saves.
   useEffect(() => {
-    if (nodes.length === 0) return;
-    const t = setTimeout(
-      () => saveGraph(workflowId, { nodes, edges }, name),
-      600,
-    );
+    if (nodes.length === 0 || !dirty) return;
+    const t = setTimeout(() => {
+      saveGraph(workflowId, { nodes, edges }, name).then(() => markSaved());
+    }, 600);
     return () => clearTimeout(t);
-  }, [workflowId, nodes, edges, name]);
+  }, [workflowId, nodes, edges, name, dirty, markSaved]);
 
   // Poll the active run → live node status (glow) + inline output.
   useEffect(() => {
     if (!currentRunId) return;
     let active = true;
+    let failures = 0;
     (async () => {
       while (active) {
         try {
           const res = await fetch(`/api/runs/${currentRunId}`);
           if (res.ok) {
+            failures = 0;
             const run = await res.json();
+            if (!active) return; // a newer run or unmount superseded us mid-fetch
             const map: Record<
               string,
               { status: string; output?: unknown; error?: string | null }
@@ -128,9 +135,16 @@ function CanvasInner({
               setRunActive(false);
               break;
             }
+          } else {
+            failures++;
           }
         } catch {
-          /* keep polling */
+          failures++;
+        }
+        // Stop spinning forever if the status endpoint keeps failing.
+        if (failures >= 5) {
+          if (active) setRunActive(false);
+          break;
         }
         await new Promise((r) => setTimeout(r, 1200));
       }

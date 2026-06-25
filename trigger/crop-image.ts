@@ -3,9 +3,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import ffmpegStatic from "ffmpeg-static";
-import { task, wait } from "@trigger.dev/sdk";
+import { task, wait, AbortTaskRunError } from "@trigger.dev/sdk";
 import { CROP_DELAY_SECONDS } from "@/lib/config";
 import {
+  alreadySucceeded,
   onNodeStart,
   onNodeSuccess,
   onNodeFailure,
@@ -18,15 +19,18 @@ import {
 interface NodePayload {
   runId: string;
   nodeId: string;
-  geminiApiKey?: string; // threaded through the DAG; never persisted
+  geminiApiKey?: string; // threaded through the DAG (transits Trigger.dev payloads; not stored in our DB)
 }
 
 export const cropImageNode = task({
   id: "crop-image-node",
   run: async ({ runId, nodeId, geminiApiKey }: NodePayload) => {
+    // Retry-after-success guard: don't re-run ffmpeg + re-upload on a replay.
+    const done = await alreadySucceeded(runId, nodeId);
+    if (done) return done.output as { outputImage: string };
+
     await onNodeStart(runId, nodeId);
 
-    // MANDATORY: ≥30s durable wait before returning (README hard requirement).
     await wait.for({ seconds: CROP_DELAY_SECONDS });
 
     const inputs = await resolveNodeInputs(runId, nodeId);
@@ -47,17 +51,30 @@ export const cropImageNode = task({
 /** FFmpeg crop using x/y/w/h percentages (0–100), then re-upload → URL. */
 async function cropImage(inputs: Record<string, unknown>): Promise<string> {
   const url = inputs.inputImage as string | undefined;
-  if (!url) throw new Error("Crop Image: no input image provided");
+  // Missing input is deterministic — abort instead of burning the retry budget.
+  if (!url) throw new AbortTaskRunError("Crop Image: no input image provided");
   const x = clamp(Number(inputs.x ?? 0));
   const y = clamp(Number(inputs.y ?? 0));
-  const w = clamp(Number(inputs.w ?? 100));
-  const h = clamp(Number(inputs.h ?? 100));
+  // Keep the region inside the frame (x+w, y+h ≤ 100) so ffmpeg doesn't fail
+  // with "Invalid too big or non positive size".
+  const w = Math.min(clamp(Number(inputs.w ?? 100)), 100 - x);
+  const h = Math.min(clamp(Number(inputs.h ?? 100)), 100 - y);
 
   const dir = await mkdtemp(join(tmpdir(), "nf-crop-"));
   const inPath = join(dir, "in.jpg");
   const outPath = join(dir, "out.jpg");
   try {
-    const buf = Buffer.from(await (await fetch(url)).arrayBuffer());
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15_000);
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: ctrl.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok)
+      throw new Error(`Crop Image: couldn't fetch input image (${res.status})`);
+    const buf = Buffer.from(await res.arrayBuffer());
     await writeFile(inPath, buf);
 
     // crop filter as % expressions of input dimensions
@@ -112,7 +129,10 @@ async function uploadImage(buf: Buffer): Promise<string> {
     a = await (await fetch(a.assembly_ssl_url)).json();
   }
   if (a.error) throw new Error("Transloadit: " + (a.message || a.error));
-  const out = a.results?.[":original"]?.[0]?.ssl_url;
+  if (a.ok !== "ASSEMBLY_COMPLETED")
+    throw new Error("Transloadit: upload timed out before completing");
+  const result = a.results?.[":original"]?.[0];
+  const out = result?.ssl_url ?? result?.url;
   if (!out) throw new Error("Transloadit returned no URL for cropped image");
   return out;
 }

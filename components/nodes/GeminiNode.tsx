@@ -194,7 +194,7 @@ export function GeminiNode({ id, data }: NodeProps) {
       {/* Response */}
       <div className="relative">
         <FieldLabel>Response</FieldLabel>
-        <div className="max-h-32 overflow-y-auto rounded border border-node-border bg-canvas px-2 py-2 text-xs">
+        <div className="nodrag nowheel max-h-32 cursor-text select-text overflow-y-auto rounded border border-node-border bg-canvas px-2 py-2 text-xs">
           {state?.error ? (
             <span className="whitespace-pre-wrap break-words text-error">
               {state.error}

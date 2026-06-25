@@ -96,21 +96,35 @@ export async function resolveNodeInputs(
     const tgt = parseHandleId(e.targetHandle);
     const src = parseHandleId(e.sourceHandle);
     if (!tgt) continue;
-    // Prefer the source's output from THIS run. If the source isn't part of
-    // this run (single-node or partial run that excludes the upstream node),
-    // fall back to its most recent successful output on this workflow — so a
-    // single node runs against the latest cached upstream values instead of
-    // failing on a missing connected input.
-    let sourceRun = await prisma.nodeRun.findUnique({
-      where: { runId_nodeId: { runId, nodeId: e.source } },
-    });
-    if (!sourceRun) {
-      sourceRun = await prisma.nodeRun.findFirst({
-        where: { nodeId: e.source, status: "SUCCESS", run: { workflowId } },
-        orderBy: { finishedAt: "desc" },
+    const srcNode = graph.nodes.find((n) => n.id === e.source);
+    let out: Record<string, unknown>;
+    if (srcNode?.data?.kind === "request-inputs") {
+      // Request-Inputs source: always derive from the LIVE graph field values
+      // so an edited input WINS over any cached prior-run output. (A stale
+      // cached value would otherwise shadow the field the user just changed,
+      // and it also lets a single/partial run work straight from the graph —
+      // no prior full run required to have cached it.)
+      const fields =
+        (srcNode.data.fields as { id: string; value?: string }[]) ?? [];
+      out = {};
+      for (const f of fields) out[f.id] = f.value ?? "";
+    } else {
+      // Prefer the source's output from THIS run. If the source isn't part of
+      // this run (single-node or partial run that excludes the upstream node),
+      // fall back to its most recent successful output on this workflow — so a
+      // single node runs against the latest cached upstream values instead of
+      // failing on a missing connected input.
+      let sourceRun = await prisma.nodeRun.findUnique({
+        where: { runId_nodeId: { runId, nodeId: e.source } },
       });
+      if (!sourceRun) {
+        sourceRun = await prisma.nodeRun.findFirst({
+          where: { nodeId: e.source, status: "SUCCESS", run: { workflowId } },
+          orderBy: { finishedAt: "desc" },
+        });
+      }
+      out = (sourceRun?.output ?? {}) as Record<string, unknown>;
     }
-    const out = (sourceRun?.output ?? {}) as Record<string, unknown>;
     const value = src ? out[src.key] : undefined;
     if (value === undefined) continue;
     const arr = byTargetKey.get(tgt.key) ?? [];
@@ -125,6 +139,23 @@ export async function resolveNodeInputs(
 }
 
 // ---- Node lifecycle ---------------------------------------------------------
+
+/**
+ * Idempotency guard for retryable task bodies. Returns the stored output if
+ * this NodeRun already reached SUCCESS, else null. Trigger.dev retries run the
+ * whole task body, so a transient throw AFTER onNodeSuccess would otherwise
+ * re-run the expensive work and re-trigger dependents; callers short-circuit on
+ * a non-null result to make retry-after-success a no-op.
+ */
+export async function alreadySucceeded(
+  runId: string,
+  nodeId: string,
+): Promise<{ output: unknown } | null> {
+  const row = await prisma.nodeRun.findUnique({
+    where: { runId_nodeId: { runId, nodeId } },
+  });
+  return row?.status === "SUCCESS" ? { output: row.output } : null;
+}
 
 export async function onNodeStart(runId: string, nodeId: string): Promise<void> {
   await prisma.nodeRun.update({
@@ -251,7 +282,12 @@ export async function scheduleDependents(
       await tasks.trigger(
         taskIdForKind(kind),
         { runId, nodeId: depId, geminiApiKey },
-        { tags: [`wfrun:${runId}`, `node:${depId}`] },
+        {
+          tags: [`wfrun:${runId}`, `node:${depId}`],
+          // Dedupe: if a sibling's task body replays on retry it could decrement
+          // and re-trigger this dependent twice — the key makes the 2nd a no-op.
+          idempotencyKey: `${runId}:${depId}`,
+        },
       );
     }
   }
@@ -350,6 +386,7 @@ export async function maybeFinalizeRun(runId: string): Promise<void> {
     : "SUCCESS";
 
   const run = await prisma.run.findUniqueOrThrow({ where: { id: runId } });
+  if (run.status !== "RUNNING") return; // already terminal (e.g. failed by the watchdog)
   await prisma.run.update({
     where: { id: runId },
     data: {
@@ -417,7 +454,10 @@ export async function startRun(
     await tasks.trigger(
       taskIdForKind(kind),
       { runId: run.id, nodeId: id, geminiApiKey },
-      { tags: [`wfrun:${run.id}`, `node:${id}`] },
+      {
+        tags: [`wfrun:${run.id}`, `node:${id}`],
+        idempotencyKey: `${run.id}:${id}`,
+      },
     );
   }
 

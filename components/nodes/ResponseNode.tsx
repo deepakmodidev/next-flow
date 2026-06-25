@@ -31,7 +31,7 @@ export function ResponseNode({ id }: NodeProps) {
     >
       <div className="relative">
         <FieldLabel>result</FieldLabel>
-        <div className="max-h-40 overflow-y-auto rounded border border-node-border bg-canvas px-2 py-2 text-xs">
+        <div className="nodrag nowheel max-h-40 cursor-text select-text overflow-y-auto rounded border border-node-border bg-canvas px-2 py-2 text-xs">
           {text ? (
             <span className="whitespace-pre-wrap text-foreground">{text}</span>
           ) : (

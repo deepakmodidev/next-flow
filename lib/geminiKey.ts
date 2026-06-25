@@ -10,9 +10,11 @@ export function getLocalGeminiKey(): string | null {
 }
 
 export function setLocalGeminiKey(key: string): void {
+  if (typeof window === "undefined") return;
   localStorage.setItem(STORAGE_KEY, key);
 }
 
 export function clearLocalGeminiKey(): void {
+  if (typeof window === "undefined") return;
   localStorage.removeItem(STORAGE_KEY);
 }

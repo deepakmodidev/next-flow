@@ -10,33 +10,30 @@ import { AlertTriangle } from "lucide-react";
  */
 export default function Error({
   error,
-  reset,
+  unstable_retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  // This Next version replaces `reset` with `unstable_retry`, which actually
+  // re-fetches + re-renders the server component — required to recover from the
+  // transient DB errors this boundary exists for (`reset` would not re-fetch).
+  unstable_retry: () => void;
 }) {
   useEffect(() => {
     console.error(error);
   }, [error]);
 
-  const isDb = /reach database|ETIMEDOUT|connection|Closed the connection/i.test(
-    error.message,
-  );
-
   return (
     <main className="flex h-dvh w-full flex-col items-center justify-center gap-3 bg-canvas px-6 text-center">
-      <AlertTriangle size={28} className="text-warning" />
-      <p className="text-sm font-medium">
-        {isDb ? "Couldn't reach the database" : "Something went wrong"}
-      </p>
-      <p className="max-w-sm text-xs text-muted">
-        {isDb
-          ? "The database may be waking up or temporarily unavailable. Try again in a moment."
-          : "An unexpected error occurred while loading this page."}
-      </p>
+      <AlertTriangle size={28} className="text-error" />
+      <p className="text-sm font-medium">Something went wrong</p>
+      {/* Surface the raw error verbatim — no friendly decoration. */}
+      <pre className="max-h-64 max-w-2xl overflow-auto whitespace-pre-wrap rounded border border-node-border bg-node p-3 text-left text-xs text-error">
+        {error.message}
+        {error.digest ? `\n\ndigest: ${error.digest}` : ""}
+      </pre>
       <button
         type="button"
-        onClick={reset}
+        onClick={() => unstable_retry()}
         className="mt-1 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white hover:opacity-90"
       >
         Try again

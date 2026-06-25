@@ -1,7 +1,8 @@
-import { task } from "@trigger.dev/sdk";
+import { task, AbortTaskRunError } from "@trigger.dev/sdk";
 import { runGemini } from "@/lib/gemini";
 import type { GeminiSettings } from "@/lib/contracts";
 import {
+  alreadySucceeded,
   onNodeStart,
   onNodeSuccess,
   onNodeFailure,
@@ -14,12 +15,18 @@ import {
 interface NodePayload {
   runId: string;
   nodeId: string;
-  geminiApiKey?: string; // BYOK, threaded through the DAG; never persisted
+  geminiApiKey?: string; // BYOK, threaded through the DAG (transits Trigger.dev payloads; not stored in our DB)
 }
 
 export const geminiNode = task({
   id: "gemini-node",
   run: async ({ runId, nodeId, geminiApiKey }: NodePayload) => {
+    // Retry-after-success guard: if this task already succeeded and is replaying
+    // on a transient retry, return the stored output instead of re-running the
+    // (paid) Gemini call.
+    const done = await alreadySucceeded(runId, nodeId);
+    if (done) return done.output;
+
     await onNodeStart(runId, nodeId);
 
     const inputs = await resolveNodeInputs(runId, nodeId);
@@ -27,8 +34,9 @@ export const geminiNode = task({
     const raw = inputs.image;
     const imageUrls = (Array.isArray(raw) ? raw : raw ? [raw] : []).map(String);
 
+    // Missing prompt is a deterministic error — abort instead of retrying 3×.
     if (inputs.prompt === undefined)
-      throw new Error("Gemini node requires a prompt input");
+      throw new AbortTaskRunError("Gemini node requires a prompt input");
 
     const output = await runGemini({
       prompt: String(inputs.prompt),

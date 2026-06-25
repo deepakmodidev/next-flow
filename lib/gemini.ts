@@ -30,7 +30,19 @@ function guessMime(url: string): string {
 }
 
 async function imagePart(url: string): Promise<Part> {
-  const buf = Buffer.from(await (await fetch(url)).arrayBuffer());
+  // Bound the fetch (Node fetch has no default timeout, so a hung host would
+  // otherwise stall the node past the task maxDuration) and reject non-OK
+  // responses so a 404 HTML page isn't base64'd and sent to Gemini as an image.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15_000);
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) throw new Error(`Failed to fetch image (${res.status}): ${url}`);
+  const buf = Buffer.from(await res.arrayBuffer());
   return { inlineData: { mimeType: guessMime(url), data: buf.toString("base64") } };
 }
 

@@ -9,7 +9,7 @@ const GraphSchema = z.object({
   edges: z.array(z.any()),
 });
 const CreateSchema = z.object({
-  name: z.string().optional(),
+  name: z.string().max(200).optional(),
   graph: GraphSchema.optional(),
 });
 
@@ -41,15 +41,15 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Invalid body" }, { status: 400 });
   }
   const graph = parsed.data.graph ?? { nodes: seedNodes(), edges: [] };
-  const w = await dbRetry(() =>
-    prisma.workflow.create({
-      data: {
-        userId,
-        name: parsed.data.name ?? "Untitled workflow",
-        graph: graph as object,
-      },
-    }),
-  );
+  // Not wrapped in dbRetry: create is non-idempotent — a retry after a
+  // committed-but-dropped insert would create a duplicate workflow.
+  const w = await prisma.workflow.create({
+    data: {
+      userId,
+      name: parsed.data.name ?? "Untitled workflow",
+      graph: graph as object,
+    },
+  });
   return Response.json({
     id: w.id,
     name: w.name,

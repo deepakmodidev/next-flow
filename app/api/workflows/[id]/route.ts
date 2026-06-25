@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma, dbRetry } from "@/lib/db";
 
 const PatchSchema = z.object({
-  name: z.string().optional(),
+  name: z.string().max(200).optional(),
   graph: z
     .object({ nodes: z.array(z.any()), edges: z.array(z.any()) })
     .optional(),
@@ -43,7 +43,10 @@ export async function PATCH(
   const data: { name?: string; graph?: object } = {};
   if (typeof parsed.data.name === "string") data.name = parsed.data.name;
   if (parsed.data.graph) data.graph = parsed.data.graph;
-  await dbRetry(() => prisma.workflow.updateMany({ where: { id, userId }, data }));
+  const { count } = await dbRetry(() =>
+    prisma.workflow.updateMany({ where: { id, userId }, data }),
+  );
+  if (count === 0) return new Response("Not found", { status: 404 });
   return Response.json({ ok: true });
 }
 
@@ -54,6 +57,9 @@ export async function DELETE(
   const { userId } = await auth();
   if (!userId) return new Response("Unauthorized", { status: 401 });
   const { id } = await params;
-  await dbRetry(() => prisma.workflow.deleteMany({ where: { id, userId } }));
+  const { count } = await dbRetry(() =>
+    prisma.workflow.deleteMany({ where: { id, userId } }),
+  );
+  if (count === 0) return new Response("Not found", { status: 404 });
   return Response.json({ ok: true });
 }

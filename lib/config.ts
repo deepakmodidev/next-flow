@@ -9,6 +9,7 @@ export const CANDIDATE_LINKEDIN_URL = "https://linkedin.com/in/deepakmodidev";
  * because the free tier's quota is comfortable on it.
  */
 export const GEMINI_MODELS = [
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   { id: "gemini-flash-latest", label: "Gemini Flash (latest)" },
   { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
 ] as const;

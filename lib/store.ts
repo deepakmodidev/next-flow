@@ -58,6 +58,7 @@ interface WorkflowState {
   setNodeState: (state: Record<string, NodeRunState>) => void;
   setWorkflowId: (id: string) => void;
   setRunActive: (active: boolean) => void;
+  markSaved: () => void;
   runScoped: (scope: RunScope, targetNodeIds: string[]) => Promise<void>;
   initIfEmpty: () => void;
   addNode: (node: AppNode) => void;
@@ -86,12 +87,24 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   nodeState: {},
 
   onNodesChange: (changes) => {
+    // Mark dirty only for persistable changes (position/remove/add) — not pure
+    // selection or measurement — so autosave doesn't fire on every selection.
     // React Flow respects node.deletable=false, so pre-placed nodes are safe.
-    set({ nodes: applyNodeChanges(changes, get().nodes) as AppNode[] });
+    const meaningful = changes.some(
+      (c) => c.type !== "select" && c.type !== "dimensions",
+    );
+    set((s) => ({
+      nodes: applyNodeChanges(changes, s.nodes) as AppNode[],
+      dirty: s.dirty || meaningful,
+    }));
   },
 
   onEdgesChange: (changes) => {
-    set({ edges: applyEdgeChanges(changes, get().edges) });
+    const meaningful = changes.some((c) => c.type !== "select");
+    set((s) => ({
+      edges: applyEdgeChanges(changes, s.edges),
+      dirty: s.dirty || meaningful,
+    }));
   },
 
   isValidConnection: (conn) => {
@@ -102,6 +115,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     if (!isTypeCompatible(src.type, tgt.type)) return false;
     if (!conn.source || !conn.target) return false;
     if (wouldCreateCycle(get().edges, conn.source, conn.target)) return false;
+    // One edge per input handle — a second source makes the input ambiguous.
+    const occupied = get().edges.some(
+      (e) => e.target === conn.target && e.targetHandle === conn.targetHandle,
+    );
+    if (occupied) return false;
     return true;
   },
 
@@ -150,12 +168,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       dirty: false,
     })),
 
-  setName: (name) => set({ name, dirty: true }),
+  setName: (name) => set({ name, dirty: true, future: [] }),
 
   setCurrentRunId: (id) => set({ currentRunId: id, nodeState: {} }),
   setNodeState: (nodeState) => set({ nodeState }),
   setWorkflowId: (id) => set({ workflowId: id }),
   setRunActive: (active) => set({ runActive: active }),
+  markSaved: () => set({ dirty: false }),
 
   // Start a run (full / multi-select / single). Saves the graph first so the
   // engine reads current state, then triggers and switches into live mode.
@@ -205,6 +224,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         n.id === id ? { ...n, data: { ...n.data, ...patch } } : n,
       ),
       dirty: true,
+      future: [],
     });
   },
 

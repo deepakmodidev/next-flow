@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
         warning: "Key is valid, but it's currently rate-limited (free-tier quota).",
       });
     }
-    return Response.json({ ok: false, error: msg.slice(0, 200) });
+    // Surface the raw upstream error verbatim — no friendly decoration.
+    return Response.json({ ok: false, error: msg });
   }
 }
