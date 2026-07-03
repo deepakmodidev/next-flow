@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -13,6 +13,7 @@ import "@xyflow/react/dist/style.css";
 import { useWorkflowStore } from "@/lib/store";
 import { EDGE_COLOR } from "@/lib/handles";
 import { nodeTypes } from "@/components/nodes/nodeTypes";
+import { edgeTypes } from "@/components/edges/edgeTypes";
 import { BottomToolbar } from "./BottomToolbar";
 import { TopBar } from "./TopBar";
 import { HistorySidebar } from "@/components/history/HistorySidebar";
@@ -87,7 +88,12 @@ function CanvasInner({
   const onNodesChange = useWorkflowStore((s) => s.onNodesChange);
   const onEdgesChange = useWorkflowStore((s) => s.onEdgesChange);
   const onConnect = useWorkflowStore((s) => s.onConnect);
+  const onReconnect = useWorkflowStore((s) => s.onReconnect);
+  const removeEdge = useWorkflowStore((s) => s.removeEdge);
   const isValidConnection = useWorkflowStore((s) => s.isValidConnection);
+  // Track whether a reconnect drag landed on a handle; if it ended in empty
+  // space, drop the edge (drag-off-to-disconnect).
+  const reconnected = useRef(true);
   const currentRunId = useWorkflowStore((s) => s.currentRunId);
   const setNodeState = useWorkflowStore((s) => s.setNodeState);
   const setRunActive = useWorkflowStore((s) => s.setRunActive);
@@ -177,8 +183,19 @@ function CanvasInner({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onReconnectStart={() => {
+            reconnected.current = false;
+          }}
+          onReconnect={(oldEdge, conn) => {
+            reconnected.current = true;
+            onReconnect(oldEdge, conn);
+          }}
+          onReconnectEnd={(_, edge) => {
+            if (!reconnected.current) removeEdge(edge.id);
+          }}
           isValidConnection={isValidConnection}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           defaultEdgeOptions={{
             animated: true,
             style: { stroke: EDGE_COLOR, strokeWidth: 1.5 },

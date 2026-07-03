@@ -3,6 +3,7 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  reconnectEdge,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -43,6 +44,8 @@ interface WorkflowState {
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (conn: Connection) => void;
+  onReconnect: (oldEdge: Edge, conn: Connection) => void;
+  removeEdge: (id: string) => void;
   isValidConnection: (conn: Connection | Edge) => boolean;
 
   // mutations
@@ -137,6 +140,40 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         get().edges,
       ),
       past,
+      future: [],
+      dirty: true,
+    });
+  },
+
+  // Re-route an existing edge to a new handle (drag an endpoint). Validated like
+  // onConnect but excluding the edge being moved, so re-attaching to the same
+  // target isn't rejected as "occupied".
+  onReconnect: (oldEdge, conn) => {
+    const src = parseHandleId(conn.sourceHandle);
+    const tgt = parseHandleId(conn.targetHandle);
+    if (!src || !tgt || src.dir !== "out" || tgt.dir !== "in") return;
+    if (!isTypeCompatible(src.type, tgt.type)) return;
+    if (!conn.source || !conn.target) return;
+    const others = get().edges.filter((e) => e.id !== oldEdge.id);
+    if (wouldCreateCycle(others, conn.source, conn.target)) return;
+    if (
+      others.some(
+        (e) => e.target === conn.target && e.targetHandle === conn.targetHandle,
+      )
+    )
+      return;
+    set({
+      edges: reconnectEdge(oldEdge, conn, get().edges),
+      past: [...get().past, snapshot(get())],
+      future: [],
+      dirty: true,
+    });
+  },
+
+  removeEdge: (id) => {
+    set({
+      edges: get().edges.filter((e) => e.id !== id),
+      past: [...get().past, snapshot(get())],
       future: [],
       dirty: true,
     });
