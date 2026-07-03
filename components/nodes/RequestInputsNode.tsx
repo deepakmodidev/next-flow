@@ -16,6 +16,7 @@ import type {
 export function RequestInputsNode({ id, data }: NodeProps) {
   const d = data as unknown as RequestInputsData;
   const updateNodeData = useWorkflowStore((s) => s.updateNodeData);
+  const removeRequestField = useWorkflowStore((s) => s.removeRequestField);
   const fields = d.fields ?? [];
 
   const setFields = (next: RequestInputField[]) =>
@@ -60,7 +61,7 @@ export function RequestInputsNode({ id, data }: NodeProps) {
             />
             <button
               type="button"
-              onClick={() => setFields(fields.filter((x) => x.id !== f.id))}
+              onClick={() => removeRequestField(id, f.id)}
               className="text-muted hover:text-error"
               aria-label="Delete field"
             >

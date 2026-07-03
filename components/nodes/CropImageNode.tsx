@@ -11,34 +11,53 @@ import type { CropImageData } from "@/lib/contracts";
 const IN_IMAGE = makeHandleId("in", "image", "inputImage");
 const OUT_IMAGE = makeHandleId("out", "image", "outputImage");
 
+// Each crop parameter gets its own typed input handle so x/y/w/h can be driven
+// by an upstream connection (e.g. a Request-Inputs text field) instead of only
+// typed in manually. Text-typed: numeric values arrive as text and the crop
+// task coerces them with Number(). Keys match the target-handle keys the
+// execution engine resolves inputs by (inputs.x / .y / .w / .h).
+const PARAM_HANDLE: Record<"x" | "y" | "w" | "h", string> = {
+  x: makeHandleId("in", "text", "x"),
+  y: makeHandleId("in", "text", "y"),
+  w: makeHandleId("in", "text", "w"),
+  h: makeHandleId("in", "text", "h"),
+};
+
 export function CropImageNode({ id, data }: NodeProps) {
   const d = data as unknown as CropImageData;
   const updateNodeData = useWorkflowStore((s) => s.updateNodeData);
   const edges = useWorkflowStore((s) => s.edges);
-  const imageConnected = edges.some(
-    (e) => e.target === id && e.targetHandle === IN_IMAGE,
-  );
+  const connected = (h: string) =>
+    edges.some((e) => e.target === id && e.targetHandle === h);
+  const imageConnected = connected(IN_IMAGE);
   const state = useWorkflowStore((s) => s.nodeState[id]);
   const outputImage = (state?.output as { outputImage?: string } | undefined)
     ?.outputImage;
 
-  const num = (k: "x" | "y" | "w" | "h") => (
-    <div key={k}>
-      <FieldLabel>{k.toUpperCase()} %</FieldLabel>
-      <input
-        type="number"
-        min={0}
-        max={100}
-        value={d[k]}
-        onChange={(e) =>
-          updateNodeData(id, {
-            [k]: Math.max(0, Math.min(100, Number(e.target.value))),
-          })
-        }
-        className="w-full rounded border border-node-border bg-node px-2 py-1 text-xs outline-none focus:border-accent"
-      />
-    </div>
-  );
+  const num = (k: "x" | "y" | "w" | "h") => {
+    const handle = PARAM_HANDLE[k];
+    const isConn = connected(handle);
+    return (
+      <div key={k} className="relative">
+        <FieldLabel>{k.toUpperCase()} %</FieldLabel>
+        <input
+          type="number"
+          min={0}
+          max={100}
+          disabled={isConn}
+          value={isConn ? "" : d[k]}
+          onChange={(e) =>
+            updateNodeData(id, {
+              [k]: Math.max(0, Math.min(100, Number(e.target.value))),
+            })
+          }
+          placeholder={isConn ? "Connected" : undefined}
+          className="w-full rounded border border-node-border bg-node px-2 py-1 text-xs outline-none focus:border-accent disabled:bg-canvas disabled:text-muted"
+        />
+        <ColoredHandle id={handle} type="target" position={Position.Left} />
+      </div>
+    );
+  };
 
   return (
     <NodeShell
@@ -60,12 +79,13 @@ export function CropImageNode({ id, data }: NodeProps) {
         <ColoredHandle id={IN_IMAGE} type="target" position={Position.Left} />
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        {num("x")}
-        {num("y")}
-        {num("w")}
-        {num("h")}
-      </div>
+      {/* One full-width row per parameter so each input handle lines up on the
+          node's left edge (a 2-col grid would strand the right column's handle
+          in the middle of the node). */}
+      {num("x")}
+      {num("y")}
+      {num("w")}
+      {num("h")}
 
       {/* Output */}
       <div className="relative">

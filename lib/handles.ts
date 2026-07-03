@@ -37,6 +37,10 @@ export function isTypeCompatible(
 const STATIC_HANDLE_TYPES: Record<string, PortType> = {
   // crop-image
   "crop-image:in:inputImage": "image",
+  "crop-image:in:x": "text",
+  "crop-image:in:y": "text",
+  "crop-image:in:w": "text",
+  "crop-image:in:h": "text",
   "crop-image:out:outputImage": "image",
   // gemini
   "gemini:in:prompt": "text",

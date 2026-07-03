@@ -13,7 +13,7 @@ import { wouldCreateCycle } from "@/lib/dag";
 import { seedNodes, type AppNode } from "@/lib/nodeFactory";
 import { saveGraph } from "@/lib/workflows";
 import { getLocalGeminiKey } from "@/lib/geminiKey";
-import type { RunScope } from "@/lib/contracts";
+import type { RequestInputsData, RunScope } from "@/lib/contracts";
 
 interface Snapshot {
   nodes: AppNode[];
@@ -64,6 +64,7 @@ interface WorkflowState {
   addNode: (node: AppNode) => void;
   updateNodeData: (id: string, patch: Record<string, unknown>) => void;
   removeNode: (id: string) => void;
+  removeRequestField: (nodeId: string, fieldId: string) => void;
 
   // history
   undo: () => void;
@@ -234,6 +235,34 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({
       nodes: get().nodes.filter((n) => n.id !== id),
       edges: get().edges.filter((e) => e.source !== id && e.target !== id),
+      past: [...get().past, snapshot(get())],
+      future: [],
+      dirty: true,
+    });
+  },
+
+  // Delete one Request-Inputs field AND prune every edge that originated from
+  // its handle. A field's source handle key is the field id (`out:<type>:<id>`),
+  // so a leftover edge would keep its downstream target handle "occupied"
+  // (see isValidConnection) — that's why a re-created field couldn't reconnect
+  // to a Crop node. Pruning the orphaned edge frees the target handle again.
+  removeRequestField: (nodeId, fieldId) => {
+    const nodes = get().nodes.map((n) => {
+      if (n.id !== nodeId) return n;
+      const data = n.data as unknown as RequestInputsData;
+      const fields = (data.fields ?? []).filter((f) => f.id !== fieldId);
+      return { ...n, data: { ...n.data, fields } };
+    });
+    const edges = get().edges.filter(
+      (e) =>
+        !(
+          e.source === nodeId &&
+          parseHandleId(e.sourceHandle)?.key === fieldId
+        ),
+    );
+    set({
+      nodes,
+      edges,
       past: [...get().past, snapshot(get())],
       future: [],
       dirty: true,
