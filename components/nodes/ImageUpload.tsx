@@ -27,6 +27,7 @@ export function ImageUpload({
   onUploaded: (url: string) => void;
 }) {
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   // Stop the poll loop / avoid setState if the node or field is removed mid-upload.
   const mounted = useRef(true);
   useEffect(
@@ -38,6 +39,7 @@ export function ImageUpload({
 
   const upload = async (file: File) => {
     setUploading(true);
+    setError(null);
     try {
       const params = {
         auth: { key: KEY },
@@ -76,15 +78,17 @@ export function ImageUpload({
       if (!mounted.current) return;
       onUploaded(url);
     } catch (e) {
+      // Surface the raw error inline, not a blocking alert.
       if (mounted.current)
-        alert("Upload failed: " + (e instanceof Error ? e.message : String(e)));
+        setError(e instanceof Error ? e.message : String(e));
     } finally {
       if (mounted.current) setUploading(false);
     }
   };
 
   return (
-    <label className="block cursor-pointer">
+    <div className="flex flex-col gap-1">
+      <label className="block cursor-pointer">
       <input
         type="file"
         accept=".jpg,.jpeg,.png,.webp,.gif"
@@ -113,6 +117,12 @@ export function ImageUpload({
           <ImageIcon size={12} /> Upload Image
         </div>
       )}
-    </label>
+      </label>
+      {error && (
+        <div className="whitespace-pre-wrap break-words rounded border border-node-border bg-canvas px-2 py-1 text-xs text-error">
+          {error}
+        </div>
+      )}
+    </div>
   );
 }

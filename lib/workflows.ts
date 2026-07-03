@@ -29,6 +29,7 @@ export async function createWorkflow(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
   });
+  if (!res.ok) throw new Error(`Create failed (${res.status})`);
   return (await res.json()) as StoredWorkflow;
 }
 
@@ -41,6 +42,7 @@ export async function createWorkflowFromGraph(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, graph }),
   });
+  if (!res.ok) throw new Error(`Create failed (${res.status})`);
   return (await res.json()) as StoredWorkflow;
 }
 
@@ -60,11 +62,13 @@ export async function saveGraph(
     return rest;
   });
   const clean = { nodes, edges: graph.edges };
-  await fetch(`/api/workflows/${id}`, {
+  const res = await fetch(`/api/workflows/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(name ? { graph: clean, name } : { graph: clean }),
   });
+  // Don't let a failed save resolve silently — the caller marks it saved.
+  if (!res.ok) throw new Error(`Save failed (${res.status})`);
 }
 
 export async function renameWorkflow(id: string, name: string): Promise<void> {

@@ -100,8 +100,20 @@ function CanvasInner({
   // selection/measurement churn doesn't trigger redundant saves.
   useEffect(() => {
     if (nodes.length === 0 || !dirty) return;
-    const t = setTimeout(() => {
-      saveGraph(workflowId, { nodes, edges }, name).then(() => markSaved());
+    const t = setTimeout(async () => {
+      try {
+        await saveGraph(workflowId, { nodes, edges }, name);
+      } catch (e) {
+        // Keep dirty so the next edit retries; never mark saved on failure.
+        console.error("Autosave failed:", e);
+        return;
+      }
+      // Only clear dirty if nothing changed during the save, else we'd cancel
+      // the pending save for a newer edit.
+      const cur = useWorkflowStore.getState();
+      if (cur.nodes === nodes && cur.edges === edges && cur.name === name) {
+        markSaved();
+      }
     }, 600);
     return () => clearTimeout(t);
   }, [workflowId, nodes, edges, name, dirty, markSaved]);

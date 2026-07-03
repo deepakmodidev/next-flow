@@ -11,11 +11,7 @@ import type { CropImageData } from "@/lib/contracts";
 const IN_IMAGE = makeHandleId("in", "image", "inputImage");
 const OUT_IMAGE = makeHandleId("out", "image", "outputImage");
 
-// Each crop parameter gets its own typed input handle so x/y/w/h can be driven
-// by an upstream connection (e.g. a Request-Inputs text field) instead of only
-// typed in manually. Text-typed: numeric values arrive as text and the crop
-// task coerces them with Number(). Keys match the target-handle keys the
-// execution engine resolves inputs by (inputs.x / .y / .w / .h).
+// Typed input handle per crop param so x/y/w/h can be driven by a connection.
 const PARAM_HANDLE: Record<"x" | "y" | "w" | "h", string> = {
   x: makeHandleId("in", "text", "x"),
   y: makeHandleId("in", "text", "y"),
@@ -79,9 +75,7 @@ export function CropImageNode({ id, data }: NodeProps) {
         <ColoredHandle id={IN_IMAGE} type="target" position={Position.Left} />
       </div>
 
-      {/* One full-width row per parameter so each input handle lines up on the
-          node's left edge (a 2-col grid would strand the right column's handle
-          in the middle of the node). */}
+      {/* full-width rows so each param handle lines up on the left edge */}
       {num("x")}
       {num("y")}
       {num("w")}

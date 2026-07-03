@@ -65,14 +65,22 @@ export function DashboardHeader() {
   const router = useRouter();
 
   const onCreate = async () => {
-    const wf = await createWorkflow();
-    router.push(`/workflow/${wf.id}`);
+    try {
+      const wf = await createWorkflow();
+      router.push(`/workflow/${wf.id}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const onCreateSample = async () => {
-    const { name, nodes, edges } = buildSampleWorkflow();
-    const wf = await createWorkflowFromGraph(name, { nodes, edges });
-    router.push(`/workflow/${wf.id}`);
+    try {
+      const { name, nodes, edges } = buildSampleWorkflow();
+      const wf = await createWorkflowFromGraph(name, { nodes, edges });
+      router.push(`/workflow/${wf.id}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
   };
 
   return (
@@ -115,8 +123,12 @@ export function DashboardList({ items }: { items: WorkflowItem[] }) {
   const [pending, startTransition] = useTransition();
 
   const onCreate = async () => {
-    const wf = await createWorkflow();
-    router.push(`/workflow/${wf.id}`);
+    try {
+      const wf = await createWorkflow();
+      router.push(`/workflow/${wf.id}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const onDelete = async (id: string) => {

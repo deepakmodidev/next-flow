@@ -91,7 +91,7 @@ export function HistorySidebar({
 }) {
   const [runs, setRuns] = useState<RunDTO[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [err, setErr] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -101,17 +101,20 @@ export function HistorySidebar({
     // shows a loader until the first response — never an empty-state flash.
     const load = () => {
       fetch(`/api/runs?workflowId=${encodeURIComponent(workflowId)}`)
-        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`History request failed (${r.status})`);
+          return r.json();
+        })
         .then((d) => {
           if (!active) return;
           setRuns(d.runs ?? []);
-          setErr(false);
+          setErr(null);
           setLoaded(true);
         })
-        .catch(() => {
+        .catch((e) => {
           if (active) {
             setRuns([]);
-            setErr(true);
+            setErr(e instanceof Error ? e.message : String(e));
             setLoaded(true);
           }
         });
@@ -148,9 +151,13 @@ export function HistorySidebar({
           </ul>
         ) : runs.length === 0 ? (
           <div className="mt-10 text-center text-xs text-muted">
-            {err
-              ? "Run history needs the database wired (DATABASE_URL)."
-              : "No runs yet. Run the workflow to see history."}
+            {err ? (
+              <span className="whitespace-pre-wrap break-words text-error">
+                {err}
+              </span>
+            ) : (
+              "No runs yet. Run the workflow to see history."
+            )}
           </div>
         ) : (
           <ul className="flex flex-col gap-2">

@@ -159,6 +159,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       nodeState: {},
     }),
 
+  // Import replaces the graph; mark dirty so autosave persists it.
   setGraph: (nodes, edges, name) =>
     set((s) => ({
       nodes,
@@ -166,7 +167,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       name: name ?? s.name,
       past: [],
       future: [],
-      dirty: false,
+      dirty: true,
     })),
 
   setName: (name) => set({ name, dirty: true, future: [] }),
@@ -241,11 +242,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     });
   },
 
-  // Delete one Request-Inputs field AND prune every edge that originated from
-  // its handle. A field's source handle key is the field id (`out:<type>:<id>`),
-  // so a leftover edge would keep its downstream target handle "occupied"
-  // (see isValidConnection) — that's why a re-created field couldn't reconnect
-  // to a Crop node. Pruning the orphaned edge frees the target handle again.
+  // Delete a field and prune edges from its handle — a leftover edge keeps the
+  // downstream target handle occupied and blocks reconnection.
   removeRequestField: (nodeId, fieldId) => {
     const nodes = get().nodes.map((n) => {
       if (n.id !== nodeId) return n;

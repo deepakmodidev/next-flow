@@ -378,7 +378,11 @@ export async function maybeFinalizeRun(runId: string): Promise<void> {
   if (pending) return;
 
   const anyFailed = rows.some((r) => r.status === "FAILED");
-  const anySuccess = rows.some((r) => r.status === "SUCCESS");
+  // Exclude pre-resolved Request-Inputs rows — they aren't real work, so an
+  // all-failed run reports FAILED instead of PARTIAL.
+  const anySuccess = rows.some(
+    (r) => r.status === "SUCCESS" && r.type !== "request-inputs",
+  );
   const status = anyFailed
     ? anySuccess
       ? "PARTIAL"
@@ -447,6 +451,23 @@ export async function startRun(
     });
   }
 
+  // Resolve local sinks with no in-run upstream up front — nothing else ever
+  // triggers them, so they'd otherwise hang the run until the watchdog.
+  for (const row of plan.rows) {
+    if (isLocalKind(row.kind) && row.pendingDeps === 0) {
+      const inputs = await resolveNodeInputs(run.id, row.id);
+      await prisma.nodeRun.update({
+        where: { runId_nodeId: { runId: run.id, nodeId: row.id } },
+        data: {
+          status: "SUCCESS",
+          inputs: inputs as object,
+          output: { result: inputs.result ?? inputs } as object,
+          finishedAt: new Date(),
+        },
+      });
+    }
+  }
+
   // Trigger executable roots; Response resolves later via scheduleDependents.
   for (const id of plan.roots) {
     const kind = (graph.nodes.find((n) => n.id === id)?.data?.kind ??
@@ -464,6 +485,10 @@ export async function startRun(
   // Fan out from the pre-resolved local sources.
   for (const id of plan.localSources)
     await scheduleDependents(run.id, id, geminiApiKey);
+
+  // Safety net for runs with no local-source fan-out (e.g. a lone Response);
+  // triggered roots are still PENDING, so this won't finalize prematurely.
+  await maybeFinalizeRun(run.id);
 
   return { runId: run.id };
 }
