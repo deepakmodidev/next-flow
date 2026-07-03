@@ -75,7 +75,8 @@ export function CropImageNode({ id, data }: NodeProps) {
         <ColoredHandle id={IN_IMAGE} type="target" position={Position.Left} />
       </div>
 
-      {/* full-width rows so each param handle lines up on the left edge */}
+      {/* one param per row so each input handle lines up on the node's left
+          edge (two inputs on one row would strand the right handle mid-node) */}
       {num("x")}
       {num("y")}
       {num("w")}
