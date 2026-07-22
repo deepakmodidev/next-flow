@@ -9,7 +9,7 @@ import {
   type TaskRunState,
 } from "@/lib/exec/realtime";
 
-const STALL_MS = 180_000; // matches the server watchdog's STUCK_MS
+const STALL_MS = 300_000; // matches the server watchdog's STUCK_MS
 
 /**
  * Live canvas state over Trigger.dev Realtime. Every node task is triggered with

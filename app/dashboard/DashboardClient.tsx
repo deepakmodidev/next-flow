@@ -136,8 +136,8 @@ export function DashboardList({ items }: { items: WorkflowItem[] }) {
     try {
       await deleteWorkflow(id);
       startTransition(() => router.refresh());
-    } catch {
-      alert("Couldn't delete — the database may be waking up. Try again in a moment.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -155,8 +155,8 @@ export function DashboardList({ items }: { items: WorkflowItem[] }) {
       await renameWorkflow(id, name);
       setEditing(null); // only leave edit mode once the write actually succeeded
       startTransition(() => router.refresh());
-    } catch {
-      alert("Couldn't rename — the database may be waking up. Try again in a moment.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
     }
   };
 

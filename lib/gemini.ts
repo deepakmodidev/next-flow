@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODEL } from "@/lib/config";
+import { assertFetchableUrl } from "@/lib/transloadit";
 import type { GeminiSettings } from "@/lib/contracts";
 
 /**
@@ -30,6 +31,7 @@ function guessMime(url: string): string {
 }
 
 async function imagePart(url: string): Promise<Part> {
+  assertFetchableUrl(url, "Gemini image");
   // Bound the fetch (Node fetch has no default timeout, so a hung host would
   // otherwise stall the node past the task maxDuration) and reject non-OK
   // responses so a 404 HTML page isn't base64'd and sent to Gemini as an image.

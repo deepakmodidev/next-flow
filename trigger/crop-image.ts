@@ -5,7 +5,7 @@ import { join } from "node:path";
 import ffmpegStatic from "ffmpeg-static";
 import { task, wait, metadata, AbortTaskRunError } from "@trigger.dev/sdk";
 import { CROP_DELAY_SECONDS } from "@/lib/config";
-import { uploadToTransloadit } from "@/lib/transloadit";
+import { uploadToTransloadit, assertFetchableUrl } from "@/lib/transloadit";
 import {
   alreadySucceeded,
   onNodeStart,
@@ -59,12 +59,17 @@ async function cropImage(inputs: Record<string, unknown>): Promise<string> {
   const url = inputs.inputImage as string | undefined;
   // Missing input is deterministic — abort instead of burning the retry budget.
   if (!url) throw new AbortTaskRunError("Crop Image: no input image provided");
-  const x = clamp(Number(inputs.x ?? 0));
-  const y = clamp(Number(inputs.y ?? 0));
+  assertFetchableUrl(url, "Crop Image");
+  const x = pct(inputs.x, 0, "X");
+  const y = pct(inputs.y, 0, "Y");
   // Keep the region inside the frame (x+w, y+h ≤ 100) so ffmpeg doesn't fail
   // with "Invalid too big or non positive size".
-  const w = Math.min(clamp(Number(inputs.w ?? 100)), 100 - x);
-  const h = Math.min(clamp(Number(inputs.h ?? 100)), 100 - y);
+  const w = Math.min(pct(inputs.w, 100, "W"), 100 - x);
+  const h = Math.min(pct(inputs.h, 100, "H"), 100 - y);
+  if (w <= 0 || h <= 0)
+    throw new AbortTaskRunError(
+      `Crop Image: width/height resolved to ${w}/${h}. Check the W and H inputs.`,
+    );
 
   const dir = await mkdtemp(join(tmpdir(), "nf-crop-"));
   const inPath = join(dir, "in.jpg");
@@ -98,8 +103,19 @@ async function cropImage(inputs: Record<string, unknown>): Promise<string> {
   }
 }
 
-function clamp(n: number): number {
-  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+/**
+ * A connected handle carrying "" or non-numeric text would become 0 and kill
+ * ffmpeg 30s later with an opaque message. Fall back to the default instead,
+ * and name the field if the value is present but unusable.
+ */
+function pct(value: unknown, fallback: number, label: string): number {
+  if (value === undefined || value === null || value === "") return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n))
+    throw new AbortTaskRunError(
+      `Crop Image: ${label} must be a number 0-100, got "${String(value)}"`,
+    );
+  return Math.max(0, Math.min(100, n));
 }
 
 function runFfmpeg(args: string[]): Promise<void> {

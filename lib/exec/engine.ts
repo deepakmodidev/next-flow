@@ -1,5 +1,5 @@
-import { auth, tasks } from "@trigger.dev/sdk";
-import { prisma } from "@/lib/db";
+import { auth, tasks, AbortTaskRunError } from "@trigger.dev/sdk";
+import { prisma, dbRetry } from "@/lib/db";
 import { parseHandleId } from "@/lib/handles";
 import { isLocalKind, type NodeKind, type RunScope } from "@/lib/contracts";
 import { planRun } from "@/lib/exec/plan";
@@ -158,10 +158,21 @@ export async function alreadySucceeded(
 }
 
 export async function onNodeStart(runId: string, nodeId: string): Promise<void> {
-  await prisma.nodeRun.update({
-    where: { runId_nodeId: { runId, nodeId } },
-    data: { status: "RUNNING", startedAt: new Date() },
-  });
+  // The watchdog may have already given up on this run. Starting now would flip
+  // the row back to RUNNING and finish SUCCESS under a run marked FAILED, which
+  // nothing ever reconciles.
+  const run = await dbRetry(() =>
+    prisma.run.findUnique({ where: { id: runId } }),
+  );
+  if (!run) throw new AbortTaskRunError(`Run ${runId} no longer exists`);
+  if (run.status !== "RUNNING")
+    throw new AbortTaskRunError(`Run already finished as ${run.status}`);
+  await dbRetry(() =>
+    prisma.nodeRun.update({
+      where: { runId_nodeId: { runId, nodeId } },
+      data: { status: "RUNNING", startedAt: new Date() },
+    }),
+  );
 }
 
 /**
@@ -225,14 +236,18 @@ export async function onNodeFailure(
   nodeId: string,
   error: unknown,
 ): Promise<void> {
-  await prisma.nodeRun.update({
-    where: { runId_nodeId: { runId, nodeId } },
-    data: {
-      status: "FAILED",
-      error: errorMessage(error),
-      finishedAt: new Date(),
-    },
-  });
+  // onFailure runs once and is never retried, so a Neon cold-start blip here
+  // would lose the FAILED state entirely and hang the run.
+  await dbRetry(() =>
+    prisma.nodeRun.update({
+      where: { runId_nodeId: { runId, nodeId } },
+      data: {
+        status: "FAILED",
+        error: errorMessage(error),
+        finishedAt: new Date(),
+      },
+    }),
+  );
   await skipDependents(runId, nodeId);
 }
 
@@ -288,17 +303,25 @@ export async function scheduleDependents(
       where: { runId_nodeId: { runId, nodeId: depId } },
       data: { pendingDeps: { decrement: 1 } },
     });
-    if (updated.pendingDeps <= 0) {
-      await tasks.trigger(
-        taskIdForKind(kind),
-        { runId, nodeId: depId, geminiApiKey },
-        {
-          tags: [`wfrun:${runId}`, `node:${depId}`],
-          // Dedupe: if a sibling's task body replays on retry it could decrement
-          // and re-trigger this dependent twice — the key makes the 2nd a no-op.
-          idempotencyKey: `${runId}:${depId}`,
-        },
-      );
+    // Same guard as the local branch: another upstream may already have failed
+    // and SKIPPED this node, and triggering it now would run it without the
+    // input that failed and report it green.
+    if (updated.pendingDeps <= 0 && updated.status === "PENDING") {
+      try {
+        await tasks.trigger(
+          taskIdForKind(kind),
+          { runId, nodeId: depId, geminiApiKey },
+          {
+            tags: [`wfrun:${runId}`, `node:${depId}`],
+            // Dedupe: if a sibling's task body replays on retry it could decrement
+            // and re-trigger this dependent twice — the key makes the 2nd a no-op.
+            idempotencyKey: `${runId}:${depId}`,
+          },
+        );
+      } catch (e) {
+        // One bad trigger shouldn't strand this node's siblings too.
+        await onNodeFailure(runId, depId, e);
+      }
     }
   }
 
@@ -341,7 +364,10 @@ async function skipDependents(runId: string, nodeId: string): Promise<void> {
  * no timeout" failure from the review). We detect it lazily at read time so it
  * works even when no worker is running to enforce a timeout itself.
  */
-const STUCK_MS = 180_000; // > task maxDuration (120s) + comfortable buffer
+// maxDuration is compute-time, but queue time and checkpointed waits are not —
+// and both count here. Crop alone is legitimately quiet for ~110s (30s delay +
+// fetch + ffmpeg + upload), so keep well clear of a false positive.
+const STUCK_MS = 300_000;
 
 type StaleRun = {
   status: string;
@@ -490,17 +516,36 @@ export async function startRun(
   }
 
   // Trigger executable roots; Response resolves later via scheduleDependents.
-  for (const id of plan.roots) {
-    const kind = (graph.nodes.find((n) => n.id === id)?.data?.kind ??
-      "gemini") as NodeKind;
-    await tasks.trigger(
-      taskIdForKind(kind),
-      { runId: run.id, nodeId: id, geminiApiKey },
-      {
-        tags: [`wfrun:${run.id}`, `node:${id}`],
-        idempotencyKey: `${run.id}:${id}`,
+  try {
+    for (const id of plan.roots) {
+      const kind = (graph.nodes.find((n) => n.id === id)?.data?.kind ??
+        "gemini") as NodeKind;
+      await tasks.trigger(
+        taskIdForKind(kind),
+        { runId: run.id, nodeId: id, geminiApiKey },
+        {
+          tags: [`wfrun:${run.id}`, `node:${id}`],
+          idempotencyKey: `${run.id}:${id}`,
+        },
+      );
+    }
+  } catch (e) {
+    // The Run row already exists. Fail it with the real reason instead of
+    // leaving it RUNNING for the watchdog to mislabel a worker timeout.
+    const error = errorMessage(e);
+    await prisma.nodeRun.updateMany({
+      where: { runId: run.id, status: { in: ["PENDING", "RUNNING"] } },
+      data: { status: "FAILED", error, finishedAt: new Date() },
+    });
+    await prisma.run.update({
+      where: { id: run.id },
+      data: {
+        status: "FAILED",
+        finishedAt: new Date(),
+        durationMs: Date.now() - run.startedAt.getTime(),
       },
-    );
+    });
+    throw e;
   }
 
   // Fan out from the pre-resolved local sources.

@@ -71,11 +71,14 @@ export function NodeShell({
               {deletable ? (
                 <button
                   type="button"
+                  // Deleting a node mid-run drops it from the graph the canvas
+                  // tracks, which makes the run look finished early.
+                  disabled={runActive}
                   onClick={() => {
                     setMenuOpen(false);
                     removeNode(nodeId);
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-error hover:bg-canvas"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-error hover:bg-canvas disabled:opacity-50"
                 >
                   <Trash2 size={13} /> Delete
                 </button>

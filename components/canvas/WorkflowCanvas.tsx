@@ -86,6 +86,10 @@ function CanvasInner({
           const detail = await fetch(`/api/runs/${latest.id}`);
           const body = detail.ok ? await detail.json() : null;
           if (cancelled) return;
+          // Re-check: the user may have hit Run while this was in flight, and
+          // re-attaching now would point the canvas at the older run.
+          const live = useWorkflowStore.getState();
+          if (live.runActive || live.currentRunId) return;
           if (body?.publicAccessToken) {
             store.setRunActive(true);
             // A scoped run only covers these nodes — pass them so the
@@ -98,7 +102,10 @@ function CanvasInner({
             return;
           }
         }
-        store.setNodeState(map); // set after so the latest outputs show immediately
+        // Re-check once more: a run may have started during the fetches above.
+        const cur = useWorkflowStore.getState();
+        if (cur.runActive || cur.currentRunId) return;
+        cur.setNodeState(map); // set after so the latest outputs show immediately
       } catch {
         /* no recent run / offline — nodes stay blank until the next run */
       }
@@ -116,12 +123,16 @@ function CanvasInner({
   const onConnect = useWorkflowStore((s) => s.onConnect);
   const onReconnect = useWorkflowStore((s) => s.onReconnect);
   const removeEdge = useWorkflowStore((s) => s.removeEdge);
+  const setReconnectingEdgeId = useWorkflowStore(
+    (s) => s.setReconnectingEdgeId,
+  );
   const isValidConnection = useWorkflowStore((s) => s.isValidConnection);
   // Track whether a reconnect drag landed on a handle; if it ended in empty
   // space, drop the edge (drag-off-to-disconnect).
   const reconnected = useRef(true);
   const currentRunId = useWorkflowStore((s) => s.currentRunId);
   const runToken = useWorkflowStore((s) => s.runToken);
+  const runActive = useWorkflowStore((s) => s.runActive);
   const dirty = useWorkflowStore((s) => s.dirty);
   const markSaved = useWorkflowStore((s) => s.markSaved);
 
@@ -160,14 +171,16 @@ function CanvasInner({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onReconnectStart={() => {
+          onReconnectStart={(_, edge) => {
             reconnected.current = false;
+            setReconnectingEdgeId(edge.id);
           }}
           onReconnect={(oldEdge, conn) => {
             reconnected.current = true;
             onReconnect(oldEdge, conn);
           }}
           onReconnectEnd={(_, edge) => {
+            setReconnectingEdgeId(null);
             if (!reconnected.current) removeEdge(edge.id);
           }}
           isValidConnection={isValidConnection}
@@ -177,7 +190,7 @@ function CanvasInner({
             animated: true,
             style: { stroke: EDGE_COLOR, strokeWidth: 1.5 },
           }}
-          deleteKeyCode={["Delete", "Backspace"]}
+          deleteKeyCode={runActive ? null : ["Delete", "Backspace"]}
           fitView
           proOptions={{ hideAttribution: true }}
         >
@@ -190,8 +203,15 @@ function CanvasInner({
           <MiniMap pannable zoomable />
           <Controls />
         </ReactFlow>
+        {/* Keyed by run: the Realtime hook caches per component instance, so
+            without a remount a new run reads the previous run's finished tasks
+            and instantly reports itself complete. */}
         {currentRunId && runToken && (
-          <RunRealtime runId={currentRunId} accessToken={runToken} />
+          <RunRealtime
+            key={currentRunId}
+            runId={currentRunId}
+            accessToken={runToken}
+          />
         )}
         <TopBar
           historyOpen={historyOpen}
