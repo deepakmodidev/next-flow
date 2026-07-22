@@ -77,7 +77,13 @@ function CanvasInner({
           if (cancelled) return;
           if (body?.publicAccessToken) {
             store.setRunActive(true);
-            store.setCurrentRunId(latest.id, body.publicAccessToken);
+            // A scoped run only covers these nodes — pass them so the
+            // subscription knows when the run is actually finished.
+            store.setCurrentRunId(
+              latest.id,
+              body.publicAccessToken,
+              (latest.nodeRuns ?? []).map((n: { nodeId: string }) => n.nodeId),
+            );
             return;
           }
         }

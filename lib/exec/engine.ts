@@ -268,6 +268,9 @@ export async function scheduleDependents(
         data: { pendingDeps: { decrement: 1 } },
       });
       if (local.pendingDeps > 0) continue;
+      // A sibling's failure may already have SKIPPED it — don't resurrect it to
+      // SUCCESS holding only the values that did arrive.
+      if (local.status !== "PENDING") continue;
       const inputs = await resolveNodeInputs(runId, depId);
       await prisma.nodeRun.update({
         where: { runId_nodeId: { runId, nodeId: depId } },

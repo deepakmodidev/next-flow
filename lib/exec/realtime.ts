@@ -67,10 +67,19 @@ export interface DerivedRun {
 }
 
 export function deriveRunState(
-  nodes: AppNode[],
-  edges: Edge[],
+  allNodes: AppNode[],
+  allEdges: Edge[],
   tasks: Record<string, TaskRunState>,
+  /** Nodes actually in the run — empty means the whole graph (a FULL run). */
+  runNodeIds: string[] = [],
 ): DerivedRun {
+  // A SINGLE/PARTIAL run only covers its targets; the rest of the graph never
+  // executes, so counting it would leave the run permanently unfinished.
+  const inRun = new Set(runNodeIds);
+  const nodes = inRun.size ? allNodes.filter((n) => inRun.has(n.id)) : allNodes;
+  const edges = inRun.size
+    ? allEdges.filter((e) => inRun.has(e.source) && inRun.has(e.target))
+    : allEdges;
   const state: Record<string, NodeRunState> = {};
 
   for (const node of nodes) {

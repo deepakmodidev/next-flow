@@ -25,6 +25,7 @@ export function RunRealtime({
 }) {
   const nodes = useWorkflowStore((s) => s.nodes);
   const edges = useWorkflowStore((s) => s.edges);
+  const runNodeIds = useWorkflowStore((s) => s.runNodeIds);
   const setNodeState = useWorkflowStore((s) => s.setNodeState);
   const setRunActive = useWorkflowStore((s) => s.setRunActive);
 
@@ -52,8 +53,8 @@ export function RunRealtime({
   }, [runs]);
 
   const derived = useMemo(
-    () => deriveRunState(nodes, edges, tasks),
-    [nodes, edges, tasks],
+    () => deriveRunState(nodes, edges, tasks, runNodeIds),
+    [nodes, edges, tasks, runNodeIds],
   );
 
   useEffect(() => {

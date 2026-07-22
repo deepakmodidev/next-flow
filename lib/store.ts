@@ -36,6 +36,8 @@ interface WorkflowState {
   currentRunId: string | null;
   /** Trigger.dev public token scoped to the current run — powers the Realtime subscription. */
   runToken: string | null;
+  /** Nodes the current run covers; empty for a FULL run. */
+  runNodeIds: string[];
   runActive: boolean;
   nodeState: Record<string, NodeRunState>;
 
@@ -56,7 +58,11 @@ interface WorkflowState {
   ) => void;
   setGraph: (nodes: AppNode[], edges: Edge[], name?: string) => void;
   setName: (name: string) => void;
-  setCurrentRunId: (id: string | null, token?: string | null) => void;
+  setCurrentRunId: (
+    id: string | null,
+    token?: string | null,
+    nodeIds?: string[],
+  ) => void;
   setNodeState: (state: Record<string, NodeRunState>) => void;
   setWorkflowId: (id: string) => void;
   setRunActive: (active: boolean) => void;
@@ -110,6 +116,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   workflowId: null,
   currentRunId: null,
   runToken: null,
+  runNodeIds: [],
   runActive: false,
   nodeState: {},
 
@@ -206,6 +213,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       dirty: false,
       currentRunId: null,
       runToken: null,
+      runNodeIds: [],
       runActive: false,
       nodeState: {},
     }),
@@ -223,8 +231,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   setName: (name) => set({ name, dirty: true, future: [] }),
 
-  setCurrentRunId: (id, token) =>
-    set({ currentRunId: id, runToken: token ?? null, nodeState: {} }),
+  setCurrentRunId: (id, token, nodeIds) =>
+    set({
+      currentRunId: id,
+      runToken: token ?? null,
+      runNodeIds: nodeIds ?? [],
+      nodeState: {},
+    }),
   setNodeState: (nodeState) => set({ nodeState }),
   setWorkflowId: (id) => set({ workflowId: id }),
   setRunActive: (active) => set({ runActive: active }),
@@ -250,7 +263,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       });
       if (!res.ok) throw new Error(await res.text());
       const { runId, publicAccessToken } = await res.json();
-      get().setCurrentRunId(runId, publicAccessToken);
+      get().setCurrentRunId(
+        runId,
+        publicAccessToken,
+        scope === "FULL" ? [] : targetNodeIds,
+      );
     } catch (e) {
       set({ runActive: false });
       alert("Run failed: " + (e instanceof Error ? e.message : String(e)));
