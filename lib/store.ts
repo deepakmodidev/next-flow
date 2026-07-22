@@ -64,6 +64,8 @@ interface WorkflowState {
     nodeIds?: string[],
   ) => void;
   setNodeState: (state: Record<string, NodeRunState>) => void;
+  /** Merge in only the nodes this run covers, leaving the others' results alone. */
+  patchNodeState: (patch: Record<string, NodeRunState>) => void;
   setWorkflowId: (id: string) => void;
   setRunActive: (active: boolean) => void;
   markSaved: () => void;
@@ -236,9 +238,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       currentRunId: id,
       runToken: token ?? null,
       runNodeIds: nodeIds ?? [],
-      nodeState: {},
     }),
   setNodeState: (nodeState) => set({ nodeState }),
+  patchNodeState: (patch) =>
+    set((s) => ({ nodeState: { ...s.nodeState, ...patch } })),
   setWorkflowId: (id) => set({ workflowId: id }),
   setRunActive: (active) => set({ runActive: active }),
   markSaved: () => set({ dirty: false }),
@@ -248,7 +251,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   runScoped: async (scope, targetNodeIds) => {
     const { workflowId, nodes, edges, name, runActive } = get();
     if (!workflowId || runActive) return;
-    set({ runActive: true, nodeState: {} });
+    // Only a full run starts from a clean canvas; a scoped run leaves the nodes
+    // it isn't touching showing their last result.
+    set({ runActive: true, ...(scope === "FULL" ? { nodeState: {} } : {}) });
     try {
       await saveGraph(workflowId, { nodes, edges }, name);
       const res = await fetch("/api/runs", {

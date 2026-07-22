@@ -26,7 +26,7 @@ export function RunRealtime({
   const nodes = useWorkflowStore((s) => s.nodes);
   const edges = useWorkflowStore((s) => s.edges);
   const runNodeIds = useWorkflowStore((s) => s.runNodeIds);
-  const setNodeState = useWorkflowStore((s) => s.setNodeState);
+  const patchNodeState = useWorkflowStore((s) => s.patchNodeState);
   const setRunActive = useWorkflowStore((s) => s.setRunActive);
 
   const { runs, error } = useRealtimeRunsWithTag(`wfrun:${runId}`, {
@@ -58,9 +58,9 @@ export function RunRealtime({
   );
 
   useEffect(() => {
-    setNodeState(derived.nodeState);
+    patchNodeState(derived.nodeState);
     if (derived.done) setRunActive(false);
-  }, [derived, setNodeState, setRunActive]);
+  }, [derived, patchNodeState, setRunActive]);
 
   // A dead subscription would otherwise leave Run disabled forever.
   useEffect(() => {
@@ -81,11 +81,11 @@ export function RunRealtime({
       const map: Record<string, { status: string; output?: unknown; error?: string | null }> = {};
       for (const n of run.nodeRuns ?? [])
         map[n.nodeId] = { status: n.status, output: n.output, error: n.error };
-      setNodeState(map);
+      patchNodeState(map);
       if (run.status !== "RUNNING") setRunActive(false);
     }, STALL_MS);
     return () => clearTimeout(t);
-  }, [derived, runId, setNodeState, setRunActive]);
+  }, [derived, runId, patchNodeState, setRunActive]);
 
   if (!error) return null;
   return (
