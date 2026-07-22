@@ -31,13 +31,15 @@ const FAILED_STATUSES = new Set([
   "FAILED",
   "CRASHED",
   "SYSTEM_FAILURE",
-  "INTERRUPTED",
   "TIMED_OUT",
   "CANCELED",
   "EXPIRED",
 ]);
 
-/** Trigger.dev run status → our node status. Anything mid-flight reads RUNNING. */
+/**
+ * Trigger.dev run status → our node status. Anything mid-flight reads RUNNING,
+ * which includes WAITING — that's the crop node sitting in its mandatory delay.
+ */
 export function mapTriggerStatus(status: string): NodeStatus {
   if (status === "COMPLETED") return "SUCCESS";
   if (FAILED_STATUSES.has(status)) return "FAILED";
