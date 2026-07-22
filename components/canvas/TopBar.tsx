@@ -30,11 +30,6 @@ export function TopBar({
     if (!file) return;
     try {
       const wf = parseWorkflowImport(await file.text());
-      // Import replaces the graph, clears undo, and autosaves — no way back.
-      if (!confirm(`Replace this workflow with "${wf.name}"? This can't be undone.`)) {
-        e.target.value = "";
-        return;
-      }
       setGraph(wf.nodes as AppNode[], wf.edges, wf.name);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Invalid workflow file");

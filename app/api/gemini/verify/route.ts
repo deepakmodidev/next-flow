@@ -24,17 +24,15 @@ export async function POST(request: NextRequest) {
     return Response.json({ ok: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // Quota exhaustion means the key authenticated (it reached the quota check)
-    // → valid, just rate-limited. Match the explicit quota markers only; a bare
-    // "429" appears in unrelated messages and would save an unverified key.
-    if (/RESOURCE_EXHAUSTED|exceeded your current quota/i.test(msg)) {
+    // A 429 means the key authenticated (it reached the quota check) → valid,
+    // just rate-limited right now. Treat as success with a heads-up.
+    if (/\b429\b|RESOURCE_EXHAUSTED|exceeded your current quota/i.test(msg)) {
       return Response.json({
         ok: true,
         warning: "Key is valid, but it's currently rate-limited (free-tier quota).",
       });
     }
-    // Surface the raw upstream error verbatim — no friendly decoration. Status
-    // must be non-2xx so callers checking res.ok don't read this as success.
-    return Response.json({ ok: false, error: msg }, { status: 502 });
+    // Surface the raw upstream error verbatim — no friendly decoration.
+    return Response.json({ ok: false, error: msg });
   }
 }

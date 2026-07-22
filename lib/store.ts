@@ -47,9 +47,6 @@ interface WorkflowState {
   onConnect: (conn: Connection) => void;
   onReconnect: (oldEdge: Edge, conn: Connection) => void;
   removeEdge: (id: string) => void;
-  /** Edge currently being dragged by an endpoint; excluded from validation. */
-  reconnectingEdgeId: string | null;
-  setReconnectingEdgeId: (id: string | null) => void;
   isValidConnection: (conn: Connection | Edge) => boolean;
 
   // mutations
@@ -89,19 +86,6 @@ function snapshot(s: Pick<WorkflowState, "nodes" | "edges">): Snapshot {
 }
 
 /**
- * Deleting a node emits a node change AND edge changes, which would push two
- * snapshots for one action and make Undo need two presses. Treat removals that
- * land in the same tick as one step.
- */
-let lastRemovalPush = 0;
-function pushRemoval(s: Pick<WorkflowState, "nodes" | "edges" | "past">) {
-  const now = Date.now();
-  if (now - lastRemovalPush < 100) return s.past;
-  lastRemovalPush = now;
-  return [...s.past, snapshot(s)];
-}
-
-/**
  * One edge per input handle — a second source makes the input ambiguous. The
  * Response node is the exception: it's a collector, so it gathers several
  * upstream outputs (e.g. Final Gemini + Crop #2) on its single result handle.
@@ -137,7 +121,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   runNodeIds: [],
   runActive: false,
   nodeState: {},
-  reconnectingEdgeId: null,
 
   onNodesChange: (changes) => {
     // Mark dirty only for persistable changes (position/remove/add) — not pure
@@ -146,25 +129,17 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     const meaningful = changes.some(
       (c) => c.type !== "select" && c.type !== "dimensions",
     );
-    // Keyboard Delete arrives here rather than through removeNode, so snapshot
-    // it or it can't be undone. Any real edit also invalidates the redo stack.
-    const removed = changes.some((c) => c.type === "remove");
     set((s) => ({
       nodes: applyNodeChanges(changes, s.nodes) as AppNode[],
       dirty: s.dirty || meaningful,
-      past: removed ? pushRemoval(s) : s.past,
-      future: meaningful ? [] : s.future,
     }));
   },
 
   onEdgesChange: (changes) => {
     const meaningful = changes.some((c) => c.type !== "select");
-    const removed = changes.some((c) => c.type === "remove");
     set((s) => ({
       edges: applyEdgeChanges(changes, s.edges),
       dirty: s.dirty || meaningful,
-      past: removed ? pushRemoval(s) : s.past,
-      future: meaningful ? [] : s.future,
     }));
   },
 
@@ -175,16 +150,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     if (src.dir !== "out" || tgt.dir !== "in") return false;
     if (!isTypeCompatible(src.type, tgt.type)) return false;
     if (!conn.source || !conn.target) return false;
-    // While dragging an endpoint, the edge being moved still sits in `edges` and
-    // would count as occupying its own target handle — making every reconnect
-    // invalid, which the drop handler then treats as "dropped in empty space"
-    // and deletes it. Exclude it from both checks.
-    const moving = get().reconnectingEdgeId;
-    const edges = moving
-      ? get().edges.filter((e) => e.id !== moving)
-      : get().edges;
-    if (wouldCreateCycle(edges, conn.source, conn.target)) return false;
-    return handleHasRoom(get().nodes, edges, conn);
+    if (wouldCreateCycle(get().edges, conn.source, conn.target)) return false;
+    return handleHasRoom(get().nodes, get().edges, conn);
   },
 
   onConnect: (conn) => {
@@ -224,8 +191,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       dirty: true,
     });
   },
-
-  setReconnectingEdgeId: (id) => set({ reconnectingEdgeId: id }),
 
   removeEdge: (id) => {
     set({
@@ -303,12 +268,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       });
       if (!res.ok) throw new Error(await res.text());
       const { runId, publicAccessToken } = await res.json();
-      // Pin the run to the nodes that existed when it started. Without this, a
-      // node added mid-run never reports and the run never looks finished.
       get().setCurrentRunId(
         runId,
         publicAccessToken,
-        scope === "FULL" ? nodes.map((n) => n.id) : targetNodeIds,
+        scope === "FULL" ? [] : targetNodeIds,
       );
     } catch (e) {
       set({ runActive: false });

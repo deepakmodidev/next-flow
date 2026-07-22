@@ -19,38 +19,6 @@ function resultUrl(a: Assembly): string | undefined {
   return r?.ssl_url ?? r?.url;
 }
 
-function Spinner({ label }: { label: string }) {
-  return (
-    <div className="flex w-full items-center justify-center gap-1 rounded border border-dashed border-node-border py-2 text-xs text-muted">
-      <Loader2 size={12} className="animate-spin" /> {label}
-    </div>
-  );
-}
-
-/**
- * Watches one upload task over Realtime. Mounted with a key per run: the hook
- * only fires onComplete once per instance, so reusing it across uploads would
- * leave the second one spinning forever.
- */
-function UploadWatch({
-  runId,
-  token,
-  onDone,
-}: {
-  runId: string;
-  token: string;
-  onDone: (url: string | undefined, error: string | undefined) => void;
-}) {
-  const { run } = useRealtimeRun(runId, {
-    accessToken: token,
-    onComplete: (finished, err) => {
-      onDone((finished?.output as { url?: string } | undefined)?.url, err?.message);
-    },
-  });
-  const phase = (run?.metadata as { phase?: string } | undefined)?.phase;
-  return <Spinner label={phase ? `Uploading — ${phase}…` : "Uploading…"} />;
-}
-
 /**
  * Transloadit image uploader for the Request-Inputs image_field (README:
  * jpg/jpeg/png/webp/gif, with preview). The file goes to Transloadit in one
@@ -71,18 +39,24 @@ export function ImageUpload({
     null,
   );
 
-  const finish = (url: string | undefined, err: string | undefined) => {
-    setWatch(null);
-    setUploading(false);
-    if (err) setError(err);
-    else if (url) onUploaded(url);
-    else setError("Upload finished but no URL was returned");
-  };
+  const { run } = useRealtimeRun(watch?.runId ?? "", {
+    accessToken: watch?.token ?? "",
+    enabled: !!watch,
+    onComplete: (finished, err) => {
+      setWatch(null);
+      setUploading(false);
+      const url = (finished?.output as { url?: string } | undefined)?.url;
+      if (err) setError(err.message);
+      else if (url) onUploaded(url);
+      else setError("Upload finished but no URL was returned");
+    },
+  });
+
+  const phase = (run?.metadata as { phase?: string } | undefined)?.phase;
 
   const upload = async (file: File) => {
     setUploading(true);
     setError(null);
-    setWatch(null);
     try {
       const form = new FormData();
       form.append(
@@ -99,7 +73,8 @@ export function ImageUpload({
         body: form,
       });
       const assembly: Assembly = await res.json();
-      if (assembly.error) throw new Error(assembly.message ?? assembly.error);
+      if (assembly.error)
+        throw new Error(assembly.message ?? assembly.error);
 
       // Small files usually come back already done — no task needed.
       if (assembly.ok === "ASSEMBLY_COMPLETED") {
@@ -140,15 +115,11 @@ export function ImageUpload({
             e.target.value = "";
           }}
         />
-        {watch ? (
-          <UploadWatch
-            key={watch.runId}
-            runId={watch.runId}
-            token={watch.token}
-            onDone={finish}
-          />
-        ) : uploading ? (
-          <Spinner label="Uploading…" />
+        {uploading ? (
+          <div className="flex w-full items-center justify-center gap-1 rounded border border-dashed border-node-border py-2 text-xs text-muted">
+            <Loader2 size={12} className="animate-spin" />
+            {phase ? `Uploading — ${phase}…` : "Uploading…"}
+          </div>
         ) : value ? (
           <div className="overflow-hidden rounded border border-node-border bg-canvas">
             {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -123,14 +123,7 @@ export function deriveRunState(
   for (const node of nodes) {
     if (kindOf(node) !== "response") continue;
     if (state[node.id].status !== "PENDING") continue;
-    // Judge against ALL its edges, not just the in-run ones. On a scoped run an
-    // upstream may sit outside the run, and collecting without it would show a
-    // partial result that disagrees with what the server records.
-    const incoming = allEdges.filter((e) => e.target === node.id);
-    if (incoming.some((e) => !state[e.source])) {
-      delete state[node.id]; // leave its previous result on the canvas
-      continue;
-    }
+    const incoming = edges.filter((e) => e.target === node.id);
     if (!incoming.every((e) => state[e.source]?.status === "SUCCESS")) continue;
     const values = incoming
       .map((e) => outputValue(state[e.source], e.sourceHandle))
@@ -145,7 +138,7 @@ export function deriveRunState(
   const done = all.every((s) => isTerminal(s.status));
   const anyFailed = all.some((s) => s.status === "FAILED");
   const anySuccess = nodes.some(
-    (n) => kindOf(n) !== "request-inputs" && state[n.id]?.status === "SUCCESS",
+    (n) => kindOf(n) !== "request-inputs" && state[n.id].status === "SUCCESS",
   );
   const status: RunStatus = !done
     ? "RUNNING"

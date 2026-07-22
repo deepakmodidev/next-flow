@@ -19,49 +19,13 @@ export const UPLOAD_STEPS = {
   ":original": { robot: "/upload/handle", result: true },
 };
 
-// Checks, not seconds — each one is a 1s wait plus a round trip.
-const MAX_CHECKS = 60;
-
-/** States that mean the assembly is still working; anything else is terminal. */
-const IN_PROGRESS = new Set([
-  "ASSEMBLY_UPLOADING",
-  "ASSEMBLY_EXECUTING",
-  "ASSEMBLY_REPLAYING",
-]);
+const MAX_WAIT_SECONDS = 60;
 
 export function assemblyResultUrl(a: Assembly): string {
   const result = a.results?.[":original"]?.[0];
   const url = result?.ssl_url ?? result?.url;
   if (!url) throw new Error("Transloadit returned no URL for the upload");
   return url;
-}
-
-/**
- * Guard for URLs that come out of the graph (crop input image, Gemini media).
- * They're user-typed, and the worker fetches them, so block anything that isn't
- * plain http(s) or that points back at the private network.
- */
-export function assertFetchableUrl(raw: string, label: string): void {
-  let u: URL;
-  try {
-    u = new URL(raw);
-  } catch {
-    throw new Error(`${label}: "${raw}" is not a valid URL`);
-  }
-  if (u.protocol !== "http:" && u.protocol !== "https:")
-    throw new Error(`${label}: only http(s) URLs are allowed`);
-  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  const blocked =
-    h === "localhost" ||
-    h.endsWith(".localhost") ||
-    h === "::1" ||
-    /^127\./.test(h) ||
-    /^10\./.test(h) ||
-    /^192\.168\./.test(h) ||
-    /^169\.254\./.test(h) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(h) ||
-    /^(fc|fd|fe80)/.test(h);
-  if (blocked) throw new Error(`${label}: private addresses are not allowed`);
 }
 
 /** Reject anything that isn't a real Transloadit status URL (client-supplied). */
@@ -79,16 +43,12 @@ export function isAssemblyStatusUrl(url: string): boolean {
 
 /** Await an assembly from inside a Trigger.dev task; returns the CDN URL. */
 export async function awaitAssembly(statusUrl: string): Promise<string> {
-  for (let i = 0; i < MAX_CHECKS; i++) {
+  for (let i = 0; i < MAX_WAIT_SECONDS; i++) {
     const res = await fetch(statusUrl);
     if (!res.ok) throw new Error(`Transloadit status ${res.status}`);
     const a: Assembly = await res.json();
     if (a.error) throw new Error("Transloadit: " + (a.message || a.error));
     if (a.ok === "ASSEMBLY_COMPLETED") return assemblyResultUrl(a);
-    // A canceled/expired assembly reports through `ok`, not `error` — without
-    // this the loop burns its whole budget then blames a timeout.
-    if (a.ok && !IN_PROGRESS.has(a.ok))
-      throw new Error(`Transloadit: assembly ended as ${a.ok}`);
     await wait.for({ seconds: 1 });
   }
   throw new Error("Transloadit: upload timed out before completing");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Check, Loader2, KeyRound } from "lucide-react";
 import {
@@ -18,16 +18,19 @@ export function GeminiKeyModal({
   open: boolean;
   onClose: () => void;
 }) {
-  // Mount only while open, so state starts fresh each time instead of being
-  // reset by an effect.
-  if (!open) return null;
-  return <KeyModal onClose={onClose} />;
-}
-
-function KeyModal({ onClose }: { onClose: () => void }) {
-  const [key, setKey] = useState(() => getLocalGeminiKey() ?? "");
+  const [key, setKey] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setKey(getLocalGeminiKey() ?? "");
+      setStatus("idle");
+      setMsg("");
+    }
+  }, [open]);
+
+  if (!open) return null;
 
   const verifyAndSave = async () => {
     setStatus("verifying");
