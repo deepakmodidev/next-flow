@@ -1,4 +1,4 @@
-import { task, AbortTaskRunError } from "@trigger.dev/sdk";
+import { task, metadata, AbortTaskRunError } from "@trigger.dev/sdk";
 import { runGemini } from "@/lib/gemini";
 import type { GeminiSettings } from "@/lib/contracts";
 import {
@@ -29,6 +29,7 @@ export const geminiNode = task({
 
     await onNodeStart(runId, nodeId);
 
+    metadata.set("phase", "resolving inputs");
     const inputs = await resolveNodeInputs(runId, nodeId);
     await recordNodeInputs(runId, nodeId, inputs);
     const raw = inputs.image;
@@ -38,6 +39,7 @@ export const geminiNode = task({
     if (inputs.prompt === undefined)
       throw new AbortTaskRunError("Gemini node requires a prompt input");
 
+    metadata.set("phase", "generating");
     const output = await runGemini({
       prompt: String(inputs.prompt),
       systemPrompt: inputs.systemPrompt

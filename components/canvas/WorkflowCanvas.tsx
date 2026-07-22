@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -13,6 +13,8 @@ import "@xyflow/react/dist/style.css";
 import { useWorkflowStore } from "@/lib/store";
 import { EDGE_COLOR } from "@/lib/handles";
 import { nodeTypes } from "@/components/nodes/nodeTypes";
+import { edgeTypes } from "@/components/edges/edgeTypes";
+import { RunRealtime } from "./RunRealtime";
 import { BottomToolbar } from "./BottomToolbar";
 import { TopBar } from "./TopBar";
 import { HistorySidebar } from "@/components/history/HistorySidebar";
@@ -68,8 +70,22 @@ function CanvasInner({
         // clobber the live run's state with a stale historical one.
         if (cancelled || store.runActive || store.currentRunId) return;
         if (latest.status === "RUNNING") {
-          store.setRunActive(true);
-          store.setCurrentRunId(latest.id); // resumes the poll (clears nodeState)
+          // Re-attach to a run that was already going: grab its Realtime token
+          // once, then the subscription owns node state from here.
+          const detail = await fetch(`/api/runs/${latest.id}`);
+          const body = detail.ok ? await detail.json() : null;
+          if (cancelled) return;
+          if (body?.publicAccessToken) {
+            store.setRunActive(true);
+            // A scoped run only covers these nodes — pass them so the
+            // subscription knows when the run is actually finished.
+            store.setCurrentRunId(
+              latest.id,
+              body.publicAccessToken,
+              (latest.nodeRuns ?? []).map((n: { nodeId: string }) => n.nodeId),
+            );
+            return;
+          }
         }
         store.setNodeState(map); // set after so the latest outputs show immediately
       } catch {
@@ -87,10 +103,14 @@ function CanvasInner({
   const onNodesChange = useWorkflowStore((s) => s.onNodesChange);
   const onEdgesChange = useWorkflowStore((s) => s.onEdgesChange);
   const onConnect = useWorkflowStore((s) => s.onConnect);
+  const onReconnect = useWorkflowStore((s) => s.onReconnect);
+  const removeEdge = useWorkflowStore((s) => s.removeEdge);
   const isValidConnection = useWorkflowStore((s) => s.isValidConnection);
+  // Track whether a reconnect drag landed on a handle; if it ended in empty
+  // space, drop the edge (drag-off-to-disconnect).
+  const reconnected = useRef(true);
   const currentRunId = useWorkflowStore((s) => s.currentRunId);
-  const setNodeState = useWorkflowStore((s) => s.setNodeState);
-  const setRunActive = useWorkflowStore((s) => s.setRunActive);
+  const runToken = useWorkflowStore((s) => s.runToken);
   const dirty = useWorkflowStore((s) => s.dirty);
   const markSaved = useWorkflowStore((s) => s.markSaved);
 
@@ -118,54 +138,6 @@ function CanvasInner({
     return () => clearTimeout(t);
   }, [workflowId, nodes, edges, name, dirty, markSaved]);
 
-  // Poll the active run → live node status (glow) + inline output.
-  useEffect(() => {
-    if (!currentRunId) return;
-    let active = true;
-    let failures = 0;
-    (async () => {
-      while (active) {
-        try {
-          const res = await fetch(`/api/runs/${currentRunId}`);
-          if (res.ok) {
-            failures = 0;
-            const run = await res.json();
-            if (!active) return; // a newer run or unmount superseded us mid-fetch
-            const map: Record<
-              string,
-              { status: string; output?: unknown; error?: string | null }
-            > = {};
-            for (const n of run.nodeRuns ?? []) {
-              map[n.nodeId] = {
-                status: n.status,
-                output: n.output,
-                error: n.error,
-              };
-            }
-            setNodeState(map);
-            if (run.status !== "RUNNING") {
-              setRunActive(false);
-              break;
-            }
-          } else {
-            failures++;
-          }
-        } catch {
-          failures++;
-        }
-        // Stop spinning forever if the status endpoint keeps failing.
-        if (failures >= 5) {
-          if (active) setRunActive(false);
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 1200));
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [currentRunId, setNodeState, setRunActive]);
-
   return (
     <div className="flex h-full w-full">
       {/* Canvas area shrinks when the history panel opens (it's a flex sibling,
@@ -177,8 +149,19 @@ function CanvasInner({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onReconnectStart={() => {
+            reconnected.current = false;
+          }}
+          onReconnect={(oldEdge, conn) => {
+            reconnected.current = true;
+            onReconnect(oldEdge, conn);
+          }}
+          onReconnectEnd={(_, edge) => {
+            if (!reconnected.current) removeEdge(edge.id);
+          }}
           isValidConnection={isValidConnection}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           defaultEdgeOptions={{
             animated: true,
             style: { stroke: EDGE_COLOR, strokeWidth: 1.5 },
@@ -196,6 +179,9 @@ function CanvasInner({
           <MiniMap pannable zoomable />
           <Controls />
         </ReactFlow>
+        {currentRunId && runToken && (
+          <RunRealtime runId={currentRunId} accessToken={runToken} />
+        )}
         <TopBar
           historyOpen={historyOpen}
           onToggleHistory={() => setHistoryOpen((o) => !o)}

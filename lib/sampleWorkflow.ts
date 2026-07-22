@@ -46,7 +46,7 @@ export function buildSampleWorkflow(): {
     {
       id: "req",
       type: "request-inputs",
-      position: { x: 40, y: 300 },
+      position: { x: 40, y: 720 },
       deletable: false,
       data: data({
         kind: "request-inputs",
@@ -72,19 +72,19 @@ export function buildSampleWorkflow(): {
     {
       id: "crop1",
       type: "crop-image",
-      position: { x: 440, y: 40 },
+      position: { x: 500, y: 0 },
       data: data({ kind: "crop-image", x: 20, y: 20, w: 60, h: 60 }),
     },
     {
       id: "crop2",
       type: "crop-image",
-      position: { x: 440, y: 360 },
+      position: { x: 500, y: 620 },
       data: data({ kind: "crop-image", x: 0, y: 0, w: 100, h: 50 }),
     },
     {
       id: "gem1",
       type: "gemini",
-      position: { x: 440, y: 680 },
+      position: { x: 500, y: 1240 },
       data: data({
         kind: "gemini",        systemPrompt:
           "You are a marketing copywriter. Write a one-paragraph product description.",
@@ -93,7 +93,7 @@ export function buildSampleWorkflow(): {
     {
       id: "gem2",
       type: "gemini",
-      position: { x: 840, y: 680 },
+      position: { x: 980, y: 1240 },
       data: data({
         kind: "gemini",        systemPrompt:
           "Condense the following product description into a tweet-length hook (under 240 characters).",
@@ -102,7 +102,7 @@ export function buildSampleWorkflow(): {
     {
       id: "gem3",
       type: "gemini",
-      position: { x: 1240, y: 320 },
+      position: { x: 1480, y: 560 },
       data: data({
         kind: "gemini",        systemPrompt:
           "You are a social media manager. Combine the tweet hook and the two product crops into a final marketing post.",
@@ -111,7 +111,7 @@ export function buildSampleWorkflow(): {
     {
       id: "res",
       type: "response",
-      position: { x: 1640, y: 360 },
+      position: { x: 1960, y: 820 },
       deletable: false,
       data: data({ kind: "response" }),
     },
@@ -135,8 +135,9 @@ export function buildSampleWorkflow(): {
     edge("e6", "crop2", oImg("outputImage"), "gem3", inImage, C_IMAGE),
     // Gemini #2 -> Final Gemini prompt
     edge("e7", "gem2", oTxt, "gem3", inPrompt, C_TEXT),
-    // Final Gemini -> Response
+    // Response collects the final Gemini text AND Crop #2's image
     edge("e8", "gem3", oTxt, "res", makeHandleId("in", "any", "result"), C_RESULT),
+    edge("e9", "crop2", oImg("outputImage"), "res", makeHandleId("in", "any", "result"), C_RESULT),
   ];
 
   return { name: "Sample — Headphones Marketing", nodes, edges };

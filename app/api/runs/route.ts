@@ -45,13 +45,8 @@ export async function POST(request: NextRequest) {
   if (!owns) return new Response("Not found", { status: 404 });
 
   try {
-    const { runId } = await startRun(
-      workflowId,
-      scope,
-      targetNodeIds,
-      geminiApiKey,
-    );
-    return Response.json({ runId });
+    const started = await startRun(workflowId, scope, targetNodeIds, geminiApiKey);
+    return Response.json(started);
   } catch (e) {
     // Surface the raw error (Next hides 500 details in prod, so return it
     // explicitly); the client shows res.text() verbatim.

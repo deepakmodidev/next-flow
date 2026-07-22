@@ -11,6 +11,12 @@ import type { CropImageData } from "@/lib/contracts";
 const IN_IMAGE = makeHandleId("in", "image", "inputImage");
 const OUT_IMAGE = makeHandleId("out", "image", "outputImage");
 
+const PHASE_LABEL: Record<string, string> = {
+  waiting: "Mandatory delay…",
+  cropping: "Cropping with FFmpeg…",
+  uploading: "Uploading result…",
+};
+
 // Typed input handle per crop param so x/y/w/h can be driven by a connection.
 const PARAM_HANDLE: Record<"x" | "y" | "w" | "h", string> = {
   x: makeHandleId("in", "text", "x"),
@@ -75,7 +81,8 @@ export function CropImageNode({ id, data }: NodeProps) {
         <ColoredHandle id={IN_IMAGE} type="target" position={Position.Left} />
       </div>
 
-      {/* full-width rows so each param handle lines up on the left edge */}
+      {/* one param per row so each input handle lines up on the node's left
+          edge (two inputs on one row would strand the right handle mid-node) */}
       {num("x")}
       {num("y")}
       {num("w")}
@@ -99,6 +106,9 @@ export function CropImageNode({ id, data }: NodeProps) {
               <span className="block max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-error">
                 {state.error}
               </span>
+            ) : state?.phase ? (
+              // Streamed from the task's run metadata over Realtime.
+              <span className="text-accent">{PHASE_LABEL[state.phase] ?? state.phase}</span>
             ) : (
               "No output yet"
             )}
