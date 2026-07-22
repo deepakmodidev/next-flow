@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, ChevronRight, ChevronDown, History } from "lucide-react";
+import { useWorkflowStore } from "@/lib/store";
 
 interface NodeRunDTO {
   id: string;
@@ -94,6 +95,12 @@ export function HistorySidebar({
   const [err, setErr] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
+  // Refetch on run lifecycle instead of on a timer: a new run starting and the
+  // Realtime subscription flipping runActive off are the only two moments the
+  // history can change.
+  const currentRunId = useWorkflowStore((s) => s.currentRunId);
+  const runActive = useWorkflowStore((s) => s.runActive);
+
   useEffect(() => {
     if (!open) return;
     let active = true;
@@ -120,12 +127,10 @@ export function HistorySidebar({
         });
     };
     load();
-    const t = setInterval(load, 2000); // live-refresh while a run progresses
     return () => {
       active = false;
-      clearInterval(t);
     };
-  }, [open, workflowId]);
+  }, [open, workflowId, currentRunId, runActive]);
 
   if (!open) return null;
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useRealtimeRun } from "@trigger.dev/react-hooks";
 import { ImageIcon, Loader2 } from "lucide-react";
 
 const KEY = process.env.NEXT_PUBLIC_TRANSLOADIT_KEY;
@@ -13,11 +14,17 @@ interface Assembly {
   results?: Record<string, Array<{ ssl_url?: string; url?: string }>>;
 }
 
+function resultUrl(a: Assembly): string | undefined {
+  const r = a.results?.[":original"]?.[0];
+  return r?.ssl_url ?? r?.url;
+}
+
 /**
  * Transloadit image uploader for the Request-Inputs image_field (README:
- * jpg/jpeg/png/webp/gif, with preview). Uploads directly to the Transloadit
- * REST API; the resulting CDN URL is stored as the field value and flows
- * downstream (crop / vision). No signature (dev) — see Transloadit settings.
+ * jpg/jpeg/png/webp/gif, with preview). The file goes to Transloadit in one
+ * request; if the assembly is still running, a Trigger.dev task watches it and
+ * this component subscribes with Realtime — so the browser never polls an
+ * assembly status URL.
  */
 export function ImageUpload({
   value,
@@ -28,95 +35,105 @@ export function ImageUpload({
 }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Stop the poll loop / avoid setState if the node or field is removed mid-upload.
-  const mounted = useRef(true);
-  useEffect(
-    () => () => {
-      mounted.current = false;
-    },
-    [],
+  const [watch, setWatch] = useState<{ runId: string; token: string } | null>(
+    null,
   );
+
+  const { run } = useRealtimeRun(watch?.runId ?? "", {
+    accessToken: watch?.token ?? "",
+    enabled: !!watch,
+    onComplete: (finished, err) => {
+      setWatch(null);
+      setUploading(false);
+      const url = (finished?.output as { url?: string } | undefined)?.url;
+      if (err) setError(err.message);
+      else if (url) onUploaded(url);
+      else setError("Upload finished but no URL was returned");
+    },
+  });
+
+  const phase = (run?.metadata as { phase?: string } | undefined)?.phase;
 
   const upload = async (file: File) => {
     setUploading(true);
     setError(null);
     try {
-      const params = {
-        auth: { key: KEY },
-        steps: { ":original": { robot: "/upload/handle", result: true } },
-      };
       const form = new FormData();
-      form.append("params", JSON.stringify(params));
+      form.append(
+        "params",
+        JSON.stringify({
+          auth: { key: KEY },
+          steps: { ":original": { robot: "/upload/handle", result: true } },
+        }),
+      );
       form.append("file", file);
 
       const res = await fetch("https://api2.transloadit.com/assemblies", {
         method: "POST",
         body: form,
       });
-      let assembly: Assembly = await res.json();
+      const assembly: Assembly = await res.json();
+      if (assembly.error)
+        throw new Error(assembly.message ?? assembly.error);
 
-      // Poll until the assembly completes — bounded so a stalled assembly can't
-      // spin forever, and stop if the node was removed mid-upload.
-      let i = 0;
-      while (
-        assembly.assembly_ssl_url &&
-        assembly.ok !== "ASSEMBLY_COMPLETED" &&
-        !assembly.error &&
-        i++ < 60
-      ) {
-        await new Promise((r) => setTimeout(r, 1000));
-        if (!mounted.current) return;
-        assembly = await (await fetch(assembly.assembly_ssl_url)).json();
+      // Small files usually come back already done — no task needed.
+      if (assembly.ok === "ASSEMBLY_COMPLETED") {
+        const url = resultUrl(assembly);
+        if (!url) throw new Error("Upload finished but no URL was returned");
+        setUploading(false);
+        onUploaded(url);
+        return;
       }
-      if (assembly.error) throw new Error(assembly.message ?? assembly.error);
-      if (assembly.ok !== "ASSEMBLY_COMPLETED")
-        throw new Error("Upload timed out before completing");
+      if (!assembly.assembly_ssl_url)
+        throw new Error("Transloadit did not return an assembly URL");
 
-      const result = assembly.results?.[":original"]?.[0];
-      const url = result?.ssl_url ?? result?.url;
-      if (!url) throw new Error("Upload finished but no URL was returned");
-      if (!mounted.current) return;
-      onUploaded(url);
+      const watchRes = await fetch("/api/uploads/watch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ statusUrl: assembly.assembly_ssl_url }),
+      });
+      if (!watchRes.ok) throw new Error(await watchRes.text());
+      const { runId, publicAccessToken } = await watchRes.json();
+      setWatch({ runId, token: publicAccessToken });
     } catch (e) {
       // Surface the raw error inline, not a blocking alert.
-      if (mounted.current)
-        setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (mounted.current) setUploading(false);
+      setError(e instanceof Error ? e.message : String(e));
+      setUploading(false);
     }
   };
 
   return (
     <div className="flex flex-col gap-1">
       <label className="block cursor-pointer">
-      <input
-        type="file"
-        accept=".jpg,.jpeg,.png,.webp,.gif"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) upload(f);
-          e.target.value = "";
-        }}
-      />
-      {uploading ? (
-        <div className="flex w-full items-center justify-center gap-1 rounded border border-dashed border-node-border py-2 text-xs text-muted">
-          <Loader2 size={12} className="animate-spin" /> Uploading…
-        </div>
-      ) : value ? (
-        <div className="overflow-hidden rounded border border-node-border bg-canvas">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={value}
-            alt="uploaded"
-            className="max-h-48 w-full object-contain"
-          />
-        </div>
-      ) : (
-        <div className="flex w-full items-center justify-center gap-1 rounded border border-dashed border-node-border py-2 text-xs text-muted hover:border-accent">
-          <ImageIcon size={12} /> Upload Image
-        </div>
-      )}
+        <input
+          type="file"
+          accept=".jpg,.jpeg,.png,.webp,.gif"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) upload(f);
+            e.target.value = "";
+          }}
+        />
+        {uploading ? (
+          <div className="flex w-full items-center justify-center gap-1 rounded border border-dashed border-node-border py-2 text-xs text-muted">
+            <Loader2 size={12} className="animate-spin" />
+            {phase ? `Uploading — ${phase}…` : "Uploading…"}
+          </div>
+        ) : value ? (
+          <div className="overflow-hidden rounded border border-node-border bg-canvas">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={value}
+              alt="uploaded"
+              className="max-h-48 w-full object-contain"
+            />
+          </div>
+        ) : (
+          <div className="flex w-full items-center justify-center gap-1 rounded border border-dashed border-node-border py-2 text-xs text-muted hover:border-accent">
+            <ImageIcon size={12} /> Upload Image
+          </div>
+        )}
       </label>
       {error && (
         <div className="whitespace-pre-wrap break-words rounded border border-node-border bg-canvas px-2 py-1 text-xs text-error">

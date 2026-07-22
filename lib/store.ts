@@ -15,17 +15,14 @@ import { seedNodes, type AppNode } from "@/lib/nodeFactory";
 import { saveGraph } from "@/lib/workflows";
 import { getLocalGeminiKey } from "@/lib/geminiKey";
 import type { RequestInputsData, RunScope } from "@/lib/contracts";
+import type { NodeRunState } from "@/lib/exec/realtime";
 
 interface Snapshot {
   nodes: AppNode[];
   edges: Edge[];
 }
 
-export interface NodeRunState {
-  status: string;
-  output?: unknown;
-  error?: string | null;
-}
+export type { NodeRunState } from "@/lib/exec/realtime";
 
 interface WorkflowState {
   nodes: AppNode[];
@@ -37,6 +34,8 @@ interface WorkflowState {
   // live execution state (driven by polling the active run)
   workflowId: string | null;
   currentRunId: string | null;
+  /** Trigger.dev public token scoped to the current run — powers the Realtime subscription. */
+  runToken: string | null;
   runActive: boolean;
   nodeState: Record<string, NodeRunState>;
 
@@ -57,7 +56,7 @@ interface WorkflowState {
   ) => void;
   setGraph: (nodes: AppNode[], edges: Edge[], name?: string) => void;
   setName: (name: string) => void;
-  setCurrentRunId: (id: string | null) => void;
+  setCurrentRunId: (id: string | null, token?: string | null) => void;
   setNodeState: (state: Record<string, NodeRunState>) => void;
   setWorkflowId: (id: string) => void;
   setRunActive: (active: boolean) => void;
@@ -78,6 +77,29 @@ function snapshot(s: Pick<WorkflowState, "nodes" | "edges">): Snapshot {
   return { nodes: structuredClone(s.nodes), edges: structuredClone(s.edges) };
 }
 
+/**
+ * One edge per input handle — a second source makes the input ambiguous. The
+ * Response node is the exception: it's a collector, so it gathers several
+ * upstream outputs (e.g. Final Gemini + Crop #2) on its single result handle.
+ */
+function handleHasRoom(
+  nodes: AppNode[],
+  edges: Edge[],
+  conn: Connection | Edge,
+): boolean {
+  const taken = edges.filter(
+    (e) => e.target === conn.target && e.targetHandle === conn.targetHandle,
+  );
+  if (taken.length === 0) return true;
+  const isCollector =
+    nodes.find((n) => n.id === conn.target)?.type === "response";
+  if (!isCollector) return false;
+  // Still reject an exact duplicate of an existing edge.
+  return !taken.some(
+    (e) => e.source === conn.source && e.sourceHandle === conn.sourceHandle,
+  );
+}
+
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   nodes: [],
   edges: [],
@@ -87,6 +109,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   future: [],
   workflowId: null,
   currentRunId: null,
+  runToken: null,
   runActive: false,
   nodeState: {},
 
@@ -119,12 +142,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     if (!isTypeCompatible(src.type, tgt.type)) return false;
     if (!conn.source || !conn.target) return false;
     if (wouldCreateCycle(get().edges, conn.source, conn.target)) return false;
-    // One edge per input handle — a second source makes the input ambiguous.
-    const occupied = get().edges.some(
-      (e) => e.target === conn.target && e.targetHandle === conn.targetHandle,
-    );
-    if (occupied) return false;
-    return true;
+    return handleHasRoom(get().nodes, get().edges, conn);
   },
 
   onConnect: (conn) => {
@@ -156,12 +174,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     if (!conn.source || !conn.target) return;
     const others = get().edges.filter((e) => e.id !== oldEdge.id);
     if (wouldCreateCycle(others, conn.source, conn.target)) return;
-    if (
-      others.some(
-        (e) => e.target === conn.target && e.targetHandle === conn.targetHandle,
-      )
-    )
-      return;
+    if (!handleHasRoom(get().nodes, others, conn)) return;
     set({
       edges: reconnectEdge(oldEdge, conn, get().edges),
       past: [...get().past, snapshot(get())],
@@ -192,6 +205,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       future: [],
       dirty: false,
       currentRunId: null,
+      runToken: null,
       runActive: false,
       nodeState: {},
     }),
@@ -209,7 +223,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   setName: (name) => set({ name, dirty: true, future: [] }),
 
-  setCurrentRunId: (id) => set({ currentRunId: id, nodeState: {} }),
+  setCurrentRunId: (id, token) =>
+    set({ currentRunId: id, runToken: token ?? null, nodeState: {} }),
   setNodeState: (nodeState) => set({ nodeState }),
   setWorkflowId: (id) => set({ workflowId: id }),
   setRunActive: (active) => set({ runActive: active }),
@@ -234,8 +249,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      const { runId } = await res.json();
-      set({ currentRunId: runId });
+      const { runId, publicAccessToken } = await res.json();
+      get().setCurrentRunId(runId, publicAccessToken);
     } catch (e) {
       set({ runActive: false });
       alert("Run failed: " + (e instanceof Error ? e.message : String(e)));

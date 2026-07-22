@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma, dbRetry } from "@/lib/db";
-import { runIsStale, failStaleRun } from "@/lib/exec/engine";
+import { runIsStale, failStaleRun, runAccessToken } from "@/lib/exec/engine";
 
 export async function GET(
   _request: NextRequest,
@@ -38,6 +38,10 @@ export async function GET(
   }
   return Response.json({
     id: run.id,
+    // Lets the canvas re-subscribe over Realtime to a run that was already
+    // going when the page loaded (reload / started in another tab).
+    publicAccessToken:
+      run.status === "RUNNING" ? await runAccessToken(run.id) : undefined,
     status: run.status,
     scope: run.scope,
     startedAt: run.startedAt,

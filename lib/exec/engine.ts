@@ -1,4 +1,4 @@
-import { tasks } from "@trigger.dev/sdk";
+import { auth, tasks } from "@trigger.dev/sdk";
 import { prisma } from "@/lib/db";
 import { parseHandleId } from "@/lib/handles";
 import { isLocalKind, type NodeKind, type RunScope } from "@/lib/contracts";
@@ -260,7 +260,14 @@ export async function scheduleDependents(
     const kind = (depNode?.data?.kind ?? "gemini") as NodeKind;
 
     if (isLocalKind(kind)) {
-      // Response (local): collect inputs, mark done.
+      // Response (local): it collects from several upstreams, so it must wait
+      // for ALL of them — resolving on the first arrival would capture only
+      // that one value.
+      const local = await prisma.nodeRun.update({
+        where: { runId_nodeId: { runId, nodeId: depId } },
+        data: { pendingDeps: { decrement: 1 } },
+      });
+      if (local.pendingDeps > 0) continue;
       const inputs = await resolveNodeInputs(runId, depId);
       await prisma.nodeRun.update({
         where: { runId_nodeId: { runId, nodeId: depId } },
@@ -403,12 +410,23 @@ export async function maybeFinalizeRun(runId: string): Promise<void> {
 
 // ---- Run starter ------------------------------------------------------------
 
+/**
+ * Token the browser uses to subscribe to this run's node tasks over Trigger.dev
+ * Realtime. Scoped to the run's tag, so it can only read that run's tasks.
+ */
+export function runAccessToken(runId: string): Promise<string> {
+  return auth.createPublicToken({
+    scopes: { read: { tags: [`wfrun:${runId}`] } },
+    expirationTime: "24hr",
+  });
+}
+
 export async function startRun(
   workflowId: string,
   scope: RunScope,
   targetNodeIds: string[],
   geminiApiKey?: string,
-): Promise<{ runId: string }> {
+): Promise<{ runId: string; publicAccessToken: string }> {
   const workflow = await prisma.workflow.findUniqueOrThrow({
     where: { id: workflowId },
   });
@@ -490,5 +508,5 @@ export async function startRun(
   // triggered roots are still PENDING, so this won't finalize prematurely.
   await maybeFinalizeRun(run.id);
 
-  return { runId: run.id };
+  return { runId: run.id, publicAccessToken: await runAccessToken(run.id) };
 }

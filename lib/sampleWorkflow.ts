@@ -135,8 +135,9 @@ export function buildSampleWorkflow(): {
     edge("e6", "crop2", oImg("outputImage"), "gem3", inImage, C_IMAGE),
     // Gemini #2 -> Final Gemini prompt
     edge("e7", "gem2", oTxt, "gem3", inPrompt, C_TEXT),
-    // Final Gemini -> Response
+    // Response collects the final Gemini text AND Crop #2's image
     edge("e8", "gem3", oTxt, "res", makeHandleId("in", "any", "result"), C_RESULT),
+    edge("e9", "crop2", oImg("outputImage"), "res", makeHandleId("in", "any", "result"), C_RESULT),
   ];
 
   return { name: "Sample — Headphones Marketing", nodes, edges };

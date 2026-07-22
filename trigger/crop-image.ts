@@ -3,8 +3,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import ffmpegStatic from "ffmpeg-static";
-import { task, wait, AbortTaskRunError } from "@trigger.dev/sdk";
+import { task, wait, metadata, AbortTaskRunError } from "@trigger.dev/sdk";
 import { CROP_DELAY_SECONDS } from "@/lib/config";
+import { uploadToTransloadit } from "@/lib/transloadit";
 import {
   alreadySucceeded,
   onNodeStart,
@@ -31,8 +32,13 @@ export const cropImageNode = task({
 
     await onNodeStart(runId, nodeId);
 
+    // Phases stream to the canvas over Realtime, so the mandatory 30s delay
+    // reads as live progress instead of a frozen node.
+    metadata.set("phase", "waiting");
+    metadata.set("delaySeconds", CROP_DELAY_SECONDS);
     await wait.for({ seconds: CROP_DELAY_SECONDS });
 
+    metadata.set("phase", "cropping");
     const inputs = await resolveNodeInputs(runId, nodeId);
     await recordNodeInputs(runId, nodeId, inputs);
     const outputImage = await cropImage(inputs);
@@ -81,7 +87,12 @@ async function cropImage(inputs: Record<string, unknown>): Promise<string> {
     const filter = `crop=in_w*${w}/100:in_h*${h}/100:in_w*${x}/100:in_h*${y}/100`;
     await runFfmpeg(["-y", "-i", inPath, "-vf", filter, outPath]);
 
-    return await uploadImage(await readFile(outPath));
+    metadata.set("phase", "uploading");
+    const out = await readFile(outPath);
+    return await uploadToTransloadit(
+      new Blob([new Uint8Array(out)], { type: "image/jpeg" }),
+      "crop.jpg",
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -104,35 +115,4 @@ function runFfmpeg(args: string[]): Promise<void> {
         : reject(new Error("ffmpeg failed: " + err.slice(-300))),
     );
   });
-}
-
-/** Re-upload the cropped image to Transloadit, return the CDN URL. */
-async function uploadImage(buf: Buffer): Promise<string> {
-  const key = process.env.NEXT_PUBLIC_TRANSLOADIT_KEY;
-  if (!key) throw new Error("Crop Image: TRANSLOADIT key not configured");
-  const params = {
-    auth: { key },
-    steps: { ":original": { robot: "/upload/handle", result: true } },
-  };
-  const form = new FormData();
-  form.append("params", JSON.stringify(params));
-  form.append("file", new Blob([new Uint8Array(buf)], { type: "image/jpeg" }), "crop.jpg");
-
-  const res = await fetch("https://api2.transloadit.com/assemblies", {
-    method: "POST",
-    body: form,
-  });
-  let a = await res.json();
-  let i = 0;
-  while (a.assembly_ssl_url && a.ok !== "ASSEMBLY_COMPLETED" && !a.error && i++ < 30) {
-    await new Promise((r) => setTimeout(r, 1000));
-    a = await (await fetch(a.assembly_ssl_url)).json();
-  }
-  if (a.error) throw new Error("Transloadit: " + (a.message || a.error));
-  if (a.ok !== "ASSEMBLY_COMPLETED")
-    throw new Error("Transloadit: upload timed out before completing");
-  const result = a.results?.[":original"]?.[0];
-  const out = result?.ssl_url ?? result?.url;
-  if (!out) throw new Error("Transloadit returned no URL for cropped image");
-  return out;
 }
