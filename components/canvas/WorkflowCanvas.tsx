@@ -58,12 +58,23 @@ function CanvasInner({
         const { runs } = await res.json();
         const latest = runs?.[0];
         if (!latest || cancelled) return;
+        // Runs come back newest first. Keep each node's most recent finished
+        // result across all of them, so a single-node run doesn't leave the rest
+        // of the canvas blank after a refresh.
         const map: Record<
           string,
           { status: string; output?: unknown; error?: string | null }
         > = {};
-        for (const n of latest.nodeRuns ?? []) {
-          map[n.nodeId] = { status: n.status, output: n.output, error: n.error };
+        for (const run of runs) {
+          for (const n of run.nodeRuns ?? []) {
+            if (map[n.nodeId]) continue;
+            if (n.status !== "SUCCESS" && n.status !== "FAILED") continue;
+            map[n.nodeId] = {
+              status: n.status,
+              output: n.output,
+              error: n.error,
+            };
+          }
         }
         const store = useWorkflowStore.getState();
         // If the user already started a run before this list resolved, don't
