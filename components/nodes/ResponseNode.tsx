@@ -23,6 +23,10 @@ export function ResponseNode({ id }: NodeProps) {
     : result == null || result === ""
       ? []
       : [result];
+  // Images sit outside the scroll box so a long text result can't push them
+  // out of sight.
+  const texts = items.filter((i) => !isImageUrl(i));
+  const images = items.filter(isImageUrl);
 
   return (
     <NodeShell
@@ -36,25 +40,39 @@ export function ResponseNode({ id }: NodeProps) {
     >
       <div className="relative">
         <FieldLabel>result</FieldLabel>
-        <div className="nodrag nowheel flex max-h-64 cursor-text select-text flex-col gap-2 overflow-y-auto rounded border border-node-border bg-canvas px-2 py-2 text-xs">
+        <div className="flex flex-col gap-2">
           {items.length === 0 ? (
-            <span className="text-muted">No output yet</span>
+            <div className="rounded border border-node-border bg-canvas px-2 py-2 text-xs text-muted">
+              No output yet
+            </div>
           ) : (
-            items.map((item, i) =>
-              isImageUrl(item) ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+            <>
+              {texts.length > 0 && (
+                <div className="nodrag nowheel max-h-40 cursor-text select-text overflow-y-auto rounded border border-node-border bg-canvas px-2 py-2 text-xs">
+                  {texts.map((item, i) => (
+                    <span
+                      key={i}
+                      className="block whitespace-pre-wrap text-foreground"
+                    >
+                      {typeof item === "string" ? item : JSON.stringify(item)}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {images.map((src, i) => (
+                <div
                   key={i}
-                  src={item}
-                  alt={`result ${i + 1}`}
-                  className="w-full rounded border border-node-border object-contain"
-                />
-              ) : (
-                <span key={i} className="whitespace-pre-wrap text-foreground">
-                  {typeof item === "string" ? item : JSON.stringify(item)}
-                </span>
-              ),
-            )
+                  className="overflow-hidden rounded border border-node-border bg-canvas"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={src}
+                    alt={`result image ${i + 1}`}
+                    className="max-h-40 w-full object-contain"
+                  />
+                </div>
+              ))}
+            </>
           )}
         </div>
         <ColoredHandle id={IN_RESULT} type="target" position={Position.Left} />
